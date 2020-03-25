@@ -1,0 +1,174 @@
+---
+output:
+  html_document:
+    df_print: paged
+---
+
+# Covid-19 Community Index
+- Chirag and Raj
+- last updated: 03/24/2020
+- chirag@xy.ai
+
+
+```{r}
+library(tidyverse)
+library(readr)
+library(gplots)
+library(ggrepel)
+library(ggthemes)
+library(DT)
+```
+
+```{r load and prepare data}
+fh_acs <- read_rds('./fh_acs.rds')
+fh_names <- read_rds('./fh_orig_tract.rds')
+fh_acs <- fh_acs %>% left_join(fh_names, by = c('geoid'='fips_tract'))
+place_vars <- names(fh_names)
+
+fh_vars <- names(fh_acs)[grep('Crude', names(fh_acs))]
+fh_behavior <- c('BINGE', 'SLEEP', 'CSMOKING')
+fh_disease <- c('ARTHRITIS', 'CANCER', 'CASTHMA', 'CHD', 'COPD', 'DIABETES', 'KIDNEY', 'TEETHLOST', 'STROKE')
+fh_risk <- c('OBESITY', 'BPHIGH', 'LPA', 'HIGHCHOL')
+fh_access <- c('ACCESS2', 'BPMED', 'CHECKUP', 'CHOLSCREEN', 'COLON_SCREEN', 'COREM', 'COREW', 'MAMMOUSE', 'MHLTH', 'PHLTH', 'PAPTEST')
+
+fh_behavior <- fh_vars[fh_behavior %>% map(grep, fh_vars) %>% unlist()]
+fh_disease <- fh_vars[fh_disease %>% map(grep, fh_vars) %>% unlist()]
+fh_risk <- fh_vars[fh_risk %>% map(grep, fh_vars) %>% unlist()]
+fh_access <- fh_vars[fh_access %>% map(grep, fh_vars) %>% unlist()]
+
+ses_vars <- c('gini_index')
+ses_vars <- c(ses_vars, 'median_income')
+ses_vars <- c(ses_vars, 'median_home_value')
+ses_vars <- c(ses_vars, 'male_over_65_pct', 'female_over_65_pct')
+ses_vars <- c(ses_vars, 'white_pct', 'african_american_pct', 'american_indian_pct', 'asian_pct', 'hawaiian_pacific_islander_pct', 'other_race_pct', 'two_or_more_race_pct')
+ses_vars <- c(ses_vars, 'hispanic_pct', 'mexican_pct', 'puerto_rican_pct', 'cuban_pct', 'dominican_pct', 'central_american_pct', 'south_american_pct', 'other_hispanic_pct')
+ses_vars <- c(ses_vars, 'less_than_high_school_pct', 'college_pct')
+ses_vars <- c(ses_vars, 'at_below_poverty_pct', 'at_below_poverty_over_65_pct')
+ses_vars <- c(ses_vars, 'unemployment_pct', 'non_employment_pct')
+ses_vars <- c(ses_vars, 'more_than_one_occupant_per_room_pct', 'more_than_one_occupant_per_room_renter_pct')
+ses_vars <- c(ses_vars, 'no_health_insurance_pct', 'no_health_insurance_over_65_pct')
+
+
+established_disease <- c('CANCER_CrudePrev', 'ARTHRITIS_CrudePrev',  'STROKE_CrudePrev', 'CASTHMA_CrudePrev','COPD_CrudePrev', 'CHD_CrudePrev', 'DIABETES_CrudePrev', 'KIDNEY_CrudePrev', 'BPMED_CrudePrev')
+established_risk <- c( 'CSMOKING_CrudePrev', 'BPHIGH_CrudePrev', 'OBESITY_CrudePrev', 'HIGHCHOL_CrudePrev')
+established_demographics <- c('male_over_65_pct', 'female_over_65_pct')
+filter_crudeprev <- function(arr) {arr[grep('CrudePrev', arr)]}
+```
+
+# Correlation between health indicators
+## "Established" diseases for COVID-19
+```{r}
+established_cols <- c(established_disease, established_risk, established_demographics)
+non_na <- complete.cases(fh_acs[, established_cols])
+fh_acs_established <- fh_acs[non_na, established_cols]  
+cr_established <- cor(fh_acs_established, use='pairwise.complete.obs')
+heatmap.2(cr_established)
+```
+
+
+
+
+# PC of established COVID risk factors
+```{r}
+pc_established <- prcomp(fh_acs_established)
+summary(pc_established)
+pc_established$rotation
+```
+
+
+# PC1 and 2 explain 90% of variation
+
+
+```{r}
+plot(pc_established$x[, 1], fh_acs_established[, 'BPHIGH_CrudePrev'])
+plot(pc_established$x[, 1], fh_acs_established[, 'BPMED_CrudePrev'])
+plot(pc_established$x[, 1], fh_acs_established[, 'OBESITY_CrudePrev'])
+plot(pc_established$x[, 1], fh_acs_established[, 'ARTHRITIS_CrudePrev'])
+fh_acs_established$pc_1 <- pc_established$x[, 1]
+fh_acs_established$pc_2 <- pc_established$x[, 2]
+```
+
+```{r}
+# now build a database of scores
+# PC1 of all
+# single
+# age
+fh_acs_scoring <- fh_acs_established %>% cbind(fh_names[non_na, ])
+fh_acs_scoring <- fh_acs_scoring %>% mutate(avg_over_65_pct = 100*(male_over_65_pct+female_over_65_pct)/2)
+fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_pc_1=scale(pc_1))
+fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_pc_2=scale(pc_2))
+fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=scale(risk_score_all))
+```
+
+# Examine PCs and association with an additive risk score
+
+
+```{r}
+top_per_state_pc1 <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 >= 3)
+bottom_per_state_pc1 <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,-risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 <= -3)
+
+p <- ggplot(fh_acs_scoring, aes(risk_score_pc_1, risk_score_pc_2)) 
+p <- p + geom_text_repel(data=top_per_state_pc1, aes(risk_score_pc_1, risk_score_pc_2, label=paste(placename, stateabbr)), size=3)
+p <- p + geom_text_repel(data=bottom_per_state_pc1, aes(risk_score_pc_1, risk_score_pc_2, label=paste(placename, stateabbr)), size=3)
+p <- p + geom_point(alpha=0.5, color='gray')
+p
+
+p <- ggplot(fh_acs_scoring, aes(risk_score_pc_1, risk_score_all)) 
+p <- p + geom_point(alpha=0.5, color='gray')
+p
+
+p <- ggplot(fh_acs_scoring, aes(CANCER_CrudePrev, risk_score_pc_1)) 
+p <- p + geom_point(alpha=0.5, color='gray')
+p
+
+p <- ggplot(fh_acs_scoring, aes(avg_over_65_pct, risk_score_pc_1)) 
+p <- p + geom_point(alpha=0.5, color='gray')
+p
+
+
+```
+
+
+
+```{r}
+
+top_per_state <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 >= 2.5)
+# top census tracts per state based on age, but filtered for those that have a high risk score
+oldest_tracts <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,avg_over_65_pct) %>% ungroup() %>% filter(avg_over_65_pct >= 50)
+top_both <- fh_acs_scoring %>% filter(risk_score_pc_1 > 2.5 & avg_over_65_pct >= 50)
+p <- ggplot(fh_acs_scoring, aes(avg_over_65_pct, risk_score_pc_1))
+p <- p + geom_point(alpha=0.5, color='gray')
+p <- p + geom_point(data=top_per_state, aes(avg_over_65_pct, risk_score_pc_1))
+p <- p + geom_text_repel(data=top_per_state, aes(avg_over_65_pct, risk_score_pc_1, label=paste(placename, stateabbr)), size=3)
+p <- p + geom_point(data=oldest_tracts, aes(avg_over_65_pct, risk_score_pc_1), color='red')
+p <- p + geom_text_repel(data=oldest_tracts, aes(avg_over_65_pct, risk_score_pc_1, label=paste(placename, stateabbr)),color='red', size=3)
+p <- p + theme_fivethirtyeight() + theme(axis.title = element_text(), legend.position = 'none') + labs(x = '% Age over 65', y = 'Comorbidity Risk Score [PC1]')
+p
+```
+
+
+# Data dump
+```{r}
+
+## show the top 10 for each state
+top_per_state <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(50,risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 >= 2.5)
+DT::datatable(top_per_state %>% select(stateabbr, placename, risk_score_pc_1, avg_over_65_pct))
+
+
+write_csv(fh_acs_scoring, path='fh_acs_covid_comm_score.csv')
+```
+
+
+
+
+
+
+# Randomization test
+- how much does the ranking shift when considering:
+- random set of diseases
+- all set
+
+
+```{r}
+
+```

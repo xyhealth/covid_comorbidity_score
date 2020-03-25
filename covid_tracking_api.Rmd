@@ -1,0 +1,69 @@
+---
+title: "Covid Tracking API"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r library load, echo=FALSE}
+# load libraries
+library(tidyverse)
+library(ggthemes)
+library(ggrepel)
+library(forcats)
+library(readr)
+library(DT)
+library(lubridate)
+
+```
+
+# Up to date COVID-19 rates
+
+- http://covidtracking.com/api/states.csv
+
+# Query the Current Covid Cases in the United States
+```{r, echo=TRUE}
+# from covidtracking.com API
+current_covid <- read_csv(url('http://covidtracking.com/api/states.csv')) 
+#current_covid <- read_csv('./states.csv')
+current_covid <- current_covid %>% mutate(state = fct_reorder(state, (positive)))
+p <- ggplot(current_covid, aes(state, positive))
+p <- p + geom_point() + scale_y_log10() + coord_flip()
+p <- p + theme_fivethirtyeight() + theme(axis.title = element_text(), legend.position = 'none', axis.text = element_text(size=8)) + labs(y='Positive Cases', x='State')
+p
+
+p <- ggplot(current_covid, aes((positive+negative), I((positive/(positive+negative))*100), label=state))
+p <- p + geom_text(size=3) + ylab('Fraction Positive') + xlab('Total Tested') + scale_x_log10()
+p <- p + theme_fivethirtyeight() + theme(axis.title = element_text(), legend.position = 'none') + labs(x='Total Tested', y='Percent Positive of Those Tested')
+p
+
+current_covid <- current_covid %>% mutate(death=ifelse(is.na(death), 0, death))
+
+p <- ggplot(current_covid, aes(positive, death/positive, label=state))
+p <- p + geom_text(size=3) + ylab('Positive') + xlab('CFR') 
+p <- p + theme_fivethirtyeight() + theme(axis.title = element_text(), legend.position = 'none') + labs(x='Total Positive', y='CFR')
+p
+
+datatable(current_covid %>% arrange(desc(positive)))
+
+```
+
+# Query daily cases in the United States
+
+```{r}
+daily_covid <- read_csv(url('https://covidtracking.com/api/states/daily.csv'))
+daily_covid <- daily_covid %>% mutate(date=ymd(date))
+p <- ggplot(daily_covid, aes(date, positive+1, color=state))
+p <- p + geom_point() + geom_line() + scale_y_log10()
+p 
+
+p <- ggplot(daily_covid, aes(date, total, color=state))
+p <- p + geom_point() + geom_line() + scale_y_log10()
+p 
+
+p <- ggplot(daily_covid, aes(date, death/positive, color=state))
+p <- p + geom_point() + geom_line() + scale_y_log10()
+p 
+
+
+```
