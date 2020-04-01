@@ -74,12 +74,15 @@ boot_pca_for_loadings <- function(df,B) {
   pb <- progress_bar$new(format = "  boot [:bar] :percent in :elapsed", total = B, clear = FALSE, width= 50)
   for (i in seq_len(B)) {
     tempdf  <- df[sample(nrow(df), replace = TRUE), ]
-    ll[[i]] <- abs(prcomp(tempdf)$rotation) 
+    ll[[i]] <- abs(prcomp(tempdf, scale. = T, center = T)$rotation) 
     pb$tick()
   }
   return(ll)
 }
-ll <- boot_pca_for_loadings(fh_acs_toboot, 1000)
+
+original <- prcomp(fh_acs_toboot, scale. = T, center = T)
+
+ll <- boot_pca_for_loadings(fh_acs_toboot, 100)
 data.frame(apply(simplify2array(ll), 1:2, quantile, probs = 0.025))[,1]
 data.frame(apply(simplify2array(ll), 1:2, quantile, probs = 0.975))[,1]
 

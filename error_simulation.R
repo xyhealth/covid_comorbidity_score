@@ -1,3 +1,4 @@
+# Chirag 
 
 library(tidyverse)
 library(progress)
@@ -68,14 +69,19 @@ pop_corr <- cor(fh_acs[non_na, c(established_disease, established_risk)])
 ### for every nth (out of B), estimate the prcomp and then the 1st PC
 ### the predicted distribution around each tract is the SE
 
-n <- 1000
-random_database <- vector("list", length = nrow(fh_acs_toboot) )
-pb <- progress_bar$new(format = "  MVTNORM [:bar] :percent in :elapsed", total = nrow(fh_acs_toboot), clear = FALSE, width= 50)
-for(ii in 1:nrow(fh_acs_toboot)) {
-  sds <- as.numeric(fh_sd_toboot[ii, ])
+set.seed(1)
+ind <- sample(nrow(fh_acs_toboot), 10000)
+fh_acs_toboot_sample <- fh_acs_toboot[ind, ]
+fh_sd_toboot_sample <- fh_sd_toboot[ind, ]
+
+n <- 100
+random_database <- vector("list", length = nrow(fh_acs_toboot_sample) )
+pb <- progress_bar$new(format = "  MVTNORM [:bar] :percent in :elapsed", total = nrow(fh_acs_toboot_sample), clear = FALSE, width= 50)
+for(ii in 1:nrow(fh_acs_toboot_sample)) {
+  sds <- as.numeric(fh_sd_toboot_sample[ii, ])
   b <- sds %*% t(sds) 
   cov_for_tract = b * pop_corr 
-  means <- as.matrix(fh_acs_toboot[ii, c(established_disease, established_risk)])
+  means <- as.matrix(fh_acs_toboot_sample[ii, c(established_disease, established_risk)])
   random_database[[ii]] <- rmvnorm(n, mean = means, sigma=cov_for_tract) 
   pb$tick()
 }
@@ -92,14 +98,22 @@ for(ii in 1:n) {
   datasets[[ii]] <- newMatrix
   pb$tick()
 }
-saveRDS(datasets, file='./error_simulation/error_simulation_data.rds')
-datasets <- read_rds('./error_simulation/error_simulation_data.rds')
-# now conduct 1000 PCs
-prcomp_for_datasets <- datasets %>% map(prcomp)
-prcomp_predicted_for_datasets <- prcomp_for_datasets %>% map(predict, fh_acs_toboot[, c(established_disease, established_risk)])
-save(prcomp_for_datasets, prcomp_predicted_for_datasets, file='error_simulation_prcomp.Rdata')
 
-load('./error_simulation/error_simulation_prcomp.Rdata')
+prcomp_for_datasets <- datasets %>% map(prcomp, scale.=TRUE, center=TRUE)
+first_loading <- prcomp_for_datasets %>% map(function(x) { x$rotation[,1] } ) %>% bind_cols()
+second_loading <- prcomp_for_datasets %>% map(function(x) { x$rotation[,2] } ) %>% bind_cols()
+
+apply(abs(first_loading), 1, sd)
+apply(abs(first_loading), 1, mean)
+
+prcomp(fh_acs_toboot_sample [, c(established_disease, established_risk)], scale. = T, center = T)$rotation[,1]
+prcomp(fh_acs_toboot_sample [, c(established_disease, established_risk)], scale. = T, center = T)$rotation[,2]
+
+
+
+#save(prcomp_for_datasets, prcomp_predicted_for_datasets, file='error_simulation_prcomp.Rdata')
+
+#load('./error_simulation/error_simulation_prcomp.Rdata')
 ### now get the PCs from the simulations
 first_simulated_pc <-  matrix(nrow=nrow(fh_acs_toboot), ncol=length(prcomp_predicted_for_datasets))
 second_simulated_pc <-  matrix(nrow=nrow(fh_acs_toboot), ncol=length(prcomp_predicted_for_datasets))
@@ -107,22 +121,5 @@ for(ii in 1:length(prcomp_predicted_for_datasets)) {
   first_simulated_pc[, ii] <- prcomp_predicted_for_datasets[[ii]][, 1]
   second_simulated_pc[, ii] <- prcomp_predicted_for_datasets[[ii]][, 2]
 }
-
-orig_pc <- prcomp(fh_acs_toboot[, c(established_disease, established_risk)])
-pred <- predict(orig_pc, fh_acs_toboot[, c(established_disease, established_risk)])
-orig_pc$x[1,1]
-quantile(abs(first_simulated_pc[1,]), probs=c(.05, .95))
-orig_pc$x[2,1]
-quantile(abs(first_simulated_pc[2,]), probs=c(.05, .95))
-orig_pc$x[3,1]
-quantile(abs(first_simulated_pc[3,]), probs=c(.05, .95))
-
-sd_for_tracts <- apply(first_simulated_pc, 1, function(x) { sd(abs(x))})
-
-
-fh_acs_toboot <- cbind(fh_acs_toboot, sd_for_tracts)
-
-
-
 
 
