@@ -4,7 +4,7 @@ output:
     df_print: paged
 ---
 
-#Covid-19 Community Index
+#Covid-19 Community Score
 
 - last updated: 03/30/2020
 - chirag@xy.ai
@@ -18,6 +18,7 @@ library(gplots)
 library(ggrepel)
 library(ggthemes)
 library(DT)
+library(scales)
 ```
 
 ```{r load and prepare data}
@@ -25,6 +26,8 @@ fh_acs <- read_rds('./fh_acs.rds')
 fh_names <- read_rds('./fh_orig_tract.rds')
 fh_acs <- fh_acs %>% left_join(fh_names, by = c('geoid'='fips_tract'))
 place_vars <- names(fh_names)
+fh_acs <- fh_acs %>%  mutate(county_code =str_sub(geoid, 1, 5))
+fh_acs <- fh_acs %>%  mutate(state_code =str_sub(geoid, 1, 2))
 
 fh_vars_all <- names(fh_acs)[grep('Crude', names(fh_acs))]
 fh_acs[, fh_vars_all] <- fh_acs[, fh_vars_all]/100 # get it to fraction units
@@ -76,8 +79,7 @@ established_demographics <- c('male_over_65_pct', 'female_over_65_pct')
 established_disease_se <- c('CANCER_SE', 'ARTHRITIS_SE',  'STROKE_SE', 'CASTHMA_SE','COPD_SE', 'CHD_SE', 'DIABETES_SE', 'KIDNEY_SE', 'BPMED_SE')
 established_risk_se <- c( 'CSMOKING_SE', 'BPHIGH_SE', 'OBESITY_SE', 'HIGHCHOL_SE')
 
-
-filter_crudeprev <- function(arr) {arr[grep('CrudePrev', arr)]}
+filter_crudeprev <- function(arr) {arr[grep('CrudePrev',arr)]}
 ```
 
 # Built environment predictors
@@ -116,6 +118,7 @@ plot(pc_established$x[, 1], fh_acs_established[, 'BPHIGH_CrudePrev'])
 plot(pc_established$x[, 1], fh_acs_established[, 'BPMED_CrudePrev'])
 plot(pc_established$x[, 1], fh_acs_established[, 'OBESITY_CrudePrev'])
 plot(pc_established$x[, 1], fh_acs_established[, 'ARTHRITIS_CrudePrev'])
+plot(pc_established$x[, 2], fh_acs_established[, 'CANCER_CrudePrev'])
 fh_acs_established$pc_1 <- as.numeric(pc_established$x[, 1])
 fh_acs_established$pc_2 <- as.numeric(pc_established$x[, 2])
 ```
@@ -125,19 +128,20 @@ fh_acs_established$pc_2 <- as.numeric(pc_established$x[, 2])
 # PC1 of all
 # single
 # age
-placenames_cols <- c("stateabbr","placename" ,"geoid","fips_place_tract","lat","long")
+placenames_cols <- c("stateabbr","placename" , "county_code", "state_code", "geoid","fips_place_tract","lat","long")
 fh_acs_scoring <- fh_acs_established %>% cbind(fh_acs[non_na, placenames_cols])
 
 fh_acs_scoring <- fh_acs_scoring %>% mutate(avg_over_65_pct = (male_over_65_pct+female_over_65_pct)/2)
-fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_pc_1=scale(pc_1))
-fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_pc_2=scale(pc_2))
-fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=scale(risk_score_all))
+fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_pc_1=rescale(pc_1, to=c(0,100)))
+fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_pc_2=rescale(-pc_2, to=c(0,100))) # flip sign of pc2
+fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_both_pc=rescale(risk_score_pc_1*.61 + risk_score_pc_2*.24, to=c(0,100))) # rescale according the the contribution of the PC
+fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=rescale(risk_score_all, to=c(0,100)))
 ```
 
 # Examine PCs and association with an additive risk score
 ```{r examine PC}
-top_per_state_pc1 <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 >= 3)
-bottom_per_state_pc1 <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,-risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 <= -3)
+top_per_state_pc1 <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 >= 50)
+bottom_per_state_pc1 <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,-risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 <= 20)
 
 p <- ggplot(fh_acs_scoring, aes(risk_score_pc_1, risk_score_pc_2)) 
 p <- p + geom_text_repel(data=top_per_state_pc1, aes(risk_score_pc_1, risk_score_pc_2, label=paste(placename, stateabbr)), size=3)
@@ -149,14 +153,36 @@ p <- ggplot(fh_acs_scoring, aes(risk_score_pc_1, risk_score_all))
 p <- p + geom_point(alpha=0.5, color='gray')
 p
 
-p <- ggplot(fh_acs_scoring, aes(CANCER_CrudePrev, risk_score_pc_1)) 
+
+p <- ggplot(fh_acs_scoring, aes(risk_score_both_pc, risk_score_pc_1)) 
 p <- p + geom_point(alpha=0.5, color='gray')
 p
 
-p <- ggplot(fh_acs_scoring, aes(avg_over_65_pct, risk_score_pc_1)) 
+p <- ggplot(fh_acs_scoring, aes(risk_score_both_pc, risk_score_pc_2)) 
 p <- p + geom_point(alpha=0.5, color='gray')
 p
 
+
+p <- ggplot(fh_acs_scoring, aes(risk_score_both_pc, CANCER_CrudePrev)) 
+p <- p + geom_point(alpha=0.5, color='gray')
+p
+
+p <- ggplot(fh_acs_scoring, aes(risk_score_both_pc, DIABETES_CrudePrev)) 
+p <- p + geom_point(alpha=0.5, color='gray')
+p
+
+p <- ggplot(fh_acs_scoring, aes(risk_score_both_pc, CHD_CrudePrev)) 
+p <- p + geom_point(alpha=0.5, color='gray')
+p
+
+
+summary(lm(risk_score_all ~ risk_score_pc_1, data=fh_acs_scoring))
+summary(lm(risk_score_all ~ risk_score_pc_1, data=fh_acs_scoring))
+summary(lm(CANCER_CrudePrev ~ risk_score_both_pc, data=fh_acs_scoring))
+
+p <- ggplot(fh_acs_scoring, aes(risk_score_both_pc, avg_over_65_pct)) 
+p <- p + geom_point(alpha=0.5, color='gray')
+p
 
 ```
 
@@ -164,24 +190,28 @@ p
 
 ```{r}
 
-top_per_state <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 >= 2.5)
+top_per_state <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,risk_score_both_pc) %>% ungroup() %>% filter(risk_score_both_pc >= 60)
 # top census tracts per state based on age, but filtered for those that have a high risk score
-oldest_tracts <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,avg_over_65_pct) %>% ungroup() %>% filter(avg_over_65_pct >= 50)
-top_both <- fh_acs_scoring %>% filter(risk_score_pc_1 > 2.5 & avg_over_65_pct >= 50)
-p <- ggplot(fh_acs_scoring, aes(avg_over_65_pct, risk_score_pc_1))
+oldest_tracts <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(1,avg_over_65_pct) %>% ungroup() %>% filter(avg_over_65_pct >= .50)
+top_both <- fh_acs_scoring %>% filter(risk_score_both_pc >= 60 & avg_over_65_pct >= .50)
+p <- ggplot(fh_acs_scoring, aes(avg_over_65_pct, risk_score_both_pc))
 p <- p + geom_point(alpha=0.5, color='gray')
-p <- p + geom_point(data=top_per_state, aes(avg_over_65_pct, risk_score_pc_1))
-p <- p + geom_text_repel(data=top_per_state, aes(avg_over_65_pct, risk_score_pc_1, label=paste(placename, stateabbr)), size=3)
-p <- p + geom_point(data=oldest_tracts, aes(avg_over_65_pct, risk_score_pc_1), color='red')
-p <- p + geom_text_repel(data=oldest_tracts, aes(avg_over_65_pct, risk_score_pc_1, label=paste(placename, stateabbr)),color='red', size=3)
-p <- p + theme_fivethirtyeight() + theme(axis.title = element_text(), legend.position = 'none') + labs(x = '% Age over 65', y = 'Comorbidity Risk Score [PC1]')
+p <- p + geom_point(data=top_per_state, aes(avg_over_65_pct, risk_score_both_pc))
+p <- p + geom_text_repel(data=top_per_state, aes(avg_over_65_pct, risk_score_both_pc, label=paste(placename, stateabbr)), size=3)
+p <- p + geom_point(data=oldest_tracts, aes(avg_over_65_pct, risk_score_both_pc), color='red')
+p <- p + geom_text_repel(data=oldest_tracts, aes(avg_over_65_pct, risk_score_both_pc, label=paste(placename, stateabbr)),color='red', size=3)
+p <- p + theme_fivethirtyeight() + theme(axis.title = element_text(), legend.position = 'none') + labs(x = '% Age over 65', y = 'Comorbidity Risk Score [PCs]')
 p
+
+
+fh_acs_scoring %>% arrange(desc(risk_score_both_pc)) %>% select(risk_score_both_pc, risk_score_pc_1, DIABETES_CrudePrev, CHD_CrudePrev, CANCER_CrudePrev, avg_over_65_pct,placename, stateabbr) %>% head(n=10)
+
 ```
 
 
 
 # Randomization test
-- see error_boot_simulation.R
+- see error_simulation.R
 
 # Correlate with SES/deprivation and built environment
 ```{r}
@@ -190,20 +220,20 @@ fh_all <- cbind(fh_acs_scoring, fh_acs[non_na, ses_vars_to_bind])
 
 fh_all_built <- fh_all %>% left_join(built_env_city_avg, by=c('placename'='city'))
 
-p_age <- ggplot(fh_all, aes(I((male_over_65_pct + female_over_65_pct)/2), risk_score_pc_1))
+p_age <- ggplot(fh_all, aes(I((male_over_65_pct + female_over_65_pct)/2), risk_score_both_pc))
 p_age <- p_age + geom_point(alpha=0.5, color='gray') + xlab('% over 65') + ylab('Covid Community Risk Score')
 
-p_income <- ggplot(fh_all, aes(median_income, risk_score_pc_1))
+p_income <- ggplot(fh_all, aes(median_income, risk_score_both_pc))
 p_income <- p_income + geom_point(alpha=0.5, color='gray') + xlab('Median income') + ylab('Covid Community Risk Score')
 
-p_poverty <- ggplot(fh_all, aes(at_below_poverty_pct, risk_score_pc_1))
+p_poverty <- ggplot(fh_all, aes(at_below_poverty_pct, risk_score_both_pc))
 p_poverty <- p_poverty + geom_point(alpha=0.5, color='gray') + xlab('% below poverty') + ylab('Covid Community Risk Score')
 
-p_num_people <- ggplot(fh_all, aes(more_than_one_occupant_per_room_pct, risk_score_pc_1))
+p_num_people <- ggplot(fh_all, aes(more_than_one_occupant_per_room_pct, risk_score_both_pc))
 p_num_people <- p_num_people + geom_point(alpha=0.5, color='gray') + xlab('% of homes with >1 occupant per room') + ylab('Covid Community Risk Score')
 
-p_built_e <- ggplot(fh_all_built, aes(avg_r2, risk_score_pc_1))
-p_built_e <- p_built_e + geom_point(alpha=0.5) + xlab('Average(R2) of Built Environment Predictions') + ylab('Covid Community Risk Score')
+#p_built_e <- ggplot(fh_all_built, aes(avg_r2, risk_score_pc_1))
+#p_built_e <- p_built_e + geom_point(alpha=0.5) + xlab('Average(R2) of Built Environment Predictions') + ylab('Covid Community Risk Score')
 
 ggarrange(p_age, p_income, p_poverty, p_num_people, ncol=2, nrow=2)
 
@@ -212,13 +242,10 @@ ggarrange(p_age, p_income, p_poverty, p_num_people, ncol=2, nrow=2)
 
 # Census-tract Community Risk data dump
 ```{r}
-
 fh_acs_scoring <- fh_acs_scoring %>% cbind(fh_acs[non_na, c('total_males', 'total_females')])
-#fh_acs_scoring <- fh_acs_scoring
-## show the top 10 for each state
-#top_per_state <- fh_acs_scoring %>% group_by(stateabbr) %>% top_n(50,risk_score_pc_1) %>% ungroup() %>% filter(risk_score_pc_1 >= 2.5)
-#DT::datatable(top_per_state %>% select(stateabbr, placename, risk_score_pc_1, avg_over_65_pct))
-
+fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score = risk_score_both_pc)
+fh_acs_scoring <- fh_acs_scoring %>% group_split(placename) %>% map(function(.x) { .x %>% mutate(rank_in_city=rank(-risk_score)) }) %>% bind_rows()
+fh_acs_scoring <- fh_acs_scoring %>% group_split(stateabbr) %>% map(function(.x) { .x %>% mutate(rank_in_state=rank(-risk_score)) }) %>% bind_rows()
 write_rds(fh_acs_scoring, path = "fh_acs_covid_comm_score.rds")
 write_csv(fh_acs_scoring, path="fh_acs_covid_comm_score.csv")
 ```
@@ -226,8 +253,9 @@ write_csv(fh_acs_scoring, path="fh_acs_covid_comm_score.csv")
 # City COVID-19 Community Risk Score
 
 ```{r city risk score}
-fh_acs_scoring_city <- fh_acs_scoring %>% select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score_all, lat,long, geoid, fips_place_tract)) %>% unite(place_state, placename, stateabbr, sep="|")
+fh_acs_scoring_city <- fh_acs_scoring %>% select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score, risk_score_both_pc, risk_score_all, lat,long, geoid, fips_place_tract)) %>% unite(place_state, placename, stateabbr, sep="|")
 fh_acs_scoring_city <- fh_acs_scoring_city %>% mutate(total_population = total_males + total_females)
+
 
 cols_to_avg <- c(established_disease, established_risk)
 cols_se <- c(established_disease_se, established_risk_se)
@@ -281,9 +309,10 @@ pc_by_city$rotation
 fh_acs_scoring_by_city$pc_1 <- as.numeric(pc_by_city$x[, 1])
 fh_acs_scoring_by_city$pc_2 <- as.numeric(pc_by_city$x[, 2])
 
-fh_acs_scoring_by_city <- fh_acs_scoring_by_city %>% mutate(risk_score_pc_1=as.numeric(-scale(pc_1))) # flip the sign
-fh_acs_scoring_by_city <- fh_acs_scoring_by_city %>% mutate(risk_score_pc_2=as.numeric(scale(pc_2)))
-fh_acs_scoring_by_city <- fh_acs_scoring_by_city %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=as.numeric(scale(risk_score_all)))
+fh_acs_scoring_by_city <- fh_acs_scoring_by_city %>% mutate(risk_score_pc_1=as.numeric(rescale(pc_1, to=c(0,100)))) # flip the sign
+fh_acs_scoring_by_city <- fh_acs_scoring_by_city %>% mutate(risk_score_pc_2=as.numeric(rescale(-pc_2, to=c(0,100))))
+fh_acs_scoring_by_city <- fh_acs_scoring_by_city %>% mutate(risk_score_both_pc=rescale(risk_score_pc_1*.61 + risk_score_pc_2*.24, to=c(0,100))) # rescale according the the contribution of the PC
+fh_acs_scoring_by_city <- fh_acs_scoring_by_city %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=as.numeric(rescale(risk_score_all, to=c(0,100))))
 
 plot(fh_acs_scoring_by_city$risk_score_pc_1, fh_acs_scoring_by_city$risk_score_all)
 plot(fh_acs_scoring_by_city$risk_score_pc_2, fh_acs_scoring_by_city$risk_score_all)
@@ -292,16 +321,80 @@ fh_acs_scoring_by_city <- fh_acs_scoring_by_city %>% separate(place_state, c("pl
   
 
 top_per_state <- fh_acs_scoring_by_city %>% group_by(stateabbr) %>% top_n(5,risk_score_pc_1) %>% ungroup() 
-DT::datatable(top_per_state %>% select(stateabbr, placename, risk_score_pc_1))
+DT::datatable(top_per_state %>% select(stateabbr, placename, risk_score_pc_1, risk_score_both_pc, risk_score_all))
 
-fh_acs_scoring_by_city_distribute <- fh_acs_scoring_by_city %>% select(c(established_cols, "placename", "stateabbr", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
+fh_acs_scoring_by_city_distribute <- fh_acs_scoring_by_city %>% select(c(established_cols, "placename", "stateabbr", "risk_score_both_pc", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
+
+fh_acs_scoring_by_city_distribute <- fh_acs_scoring_by_city_distribute %>% mutate(risk_score = risk_score_both_pc)
+fh_acs_scoring_by_city_distribute <- fh_acs_scoring_by_city_distribute %>% group_split(stateabbr) %>% map(function(.x) { .x %>% mutate(rank_in_state=rank(-risk_score)) }) %>% bind_rows()
+
 write_rds(fh_acs_scoring_by_city_distribute, path = "fh_acs_covid_city_comm_score.rds")
 write_csv(fh_acs_scoring_by_city_distribute, path="fh_acs_covid_city_comm_score.csv")
 ```
 
+# County COVID-19 Community Risk Score
+```{r county risk score}
+fh_acs_scoring_county <- fh_acs_scoring %>% select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score_all, risk_score_both_pc, lat,long, geoid, fips_place_tract)) %>% mutate(total_population = total_males + total_females)
+location_info <- fh_acs_scoring %>% select(county_code, stateabbr) %>% unique() # go up a hierarchy
+fh_acs_scoring_county <- fh_acs_scoring_county %>% cbind(fh_acs[non_na, c(established_disease_se, established_risk_se)])
+
+for(i in 1:length(cols_to_total)) {
+  fh_acs_scoring_county <- fh_acs_scoring_county %>% mutate(!!cols_total[i] := .data[[cols_to_total[i]]]*total_population)
+}
+fh_acs_scoring_by_county <- fh_acs_scoring_county %>% group_by(county_code) %>% summarise_at(c(cols_total, 'total_population'), sum)
+
+for(i in 1:length(cols_total)) {
+  fh_acs_scoring_by_county <- fh_acs_scoring_by_county %>% mutate(!!cols_to_prev[i] := .data[[cols_total[i]]]/total_population)
+}
+
+weighted_county_code_prev_avgs <- function(d, prefix_cols) {
+  avgs <- prefix_cols %>% map_dbl(~weighted_prev_avg(d, .x))
+  place<- d[['county_code']][1]
+  tibble(disease=prefix_cols, prevalence=avgs, county_code=place)
+}
+
+fh_acs_scoring_prevs_by_county <- fh_acs_scoring_county %>% group_by(county_code) %>% group_split(keep=TRUE) %>% map_df(~weighted_county_code_prev_avgs(.x, prefixes))
+fh_acs_scoring_prevs_by_county$disease <- sprintf('%s_CrudePrev', fh_acs_scoring_prevs_by_county$disease)
+fh_acs_scoring_prevs_by_county <- fh_acs_scoring_prevs_by_county %>% spread(disease, prevalence)
+
+fh_acs_scoring_by_county <- fh_acs_scoring_by_county %>% left_join(fh_acs_scoring_prevs_by_county, by='county_code')
+
+heatmap.2(cor(fh_acs_scoring_by_county[,established_cols]))
+
+pc_by_county <- prcomp(fh_acs_scoring_by_county[,established_cols],center=T, scale.=T)
+summary(pc_by_county)
+pc_by_county$rotation
+
+
+fh_acs_scoring_by_county$pc_1 <- as.numeric(pc_by_county$x[, 1])
+fh_acs_scoring_by_county$pc_2 <- as.numeric(pc_by_county$x[, 2])
+
+
+fh_acs_scoring_by_county <- fh_acs_scoring_by_county %>% mutate(risk_score_pc_1=as.numeric(rescale(-pc_1,to=c(0,100)))) 
+fh_acs_scoring_by_county <- fh_acs_scoring_by_county %>% mutate(risk_score_pc_2=as.numeric(rescale(-pc_2,to=c(0,100))))
+fh_acs_scoring_by_county <- fh_acs_scoring_by_county %>% mutate(risk_score_both_pc=rescale(risk_score_pc_1*.61 + risk_score_pc_2*.24, to=c(0,100))) # rescale according the the contribution of the PC
+fh_acs_scoring_by_county <- fh_acs_scoring_by_county %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=as.numeric(rescale(risk_score_all, to=c(0,100))))
+
+plot(fh_acs_scoring_by_county$risk_score_pc_1, fh_acs_scoring_by_county$risk_score_all)
+plot(fh_acs_scoring_by_county$risk_score_pc_2, fh_acs_scoring_by_county$risk_score_all)
+
+fh_acs_scoring_by_county_distribute <- fh_acs_scoring_by_county %>% select(c(established_cols, "county_code", "risk_score_both_pc", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
+
+fh_acs_scoring_by_county_distribute <- fh_acs_scoring_by_county_distribute %>% mutate(risk_score = risk_score_both_pc)
+fh_acs_scoring_by_county_distribute <- fh_acs_scoring_by_county_distribute %>% left_join(location_info)
+fh_acs_scoring_by_county_distribute <- fh_acs_scoring_by_county_distribute %>% group_split(stateabbr) %>% map(function(.x) { .x %>% mutate(rank_in_state=rank(-risk_score)) }) %>% bind_rows()
+
+DT::datatable(fh_acs_scoring_by_county_distribute %>% select(county_code, stateabbr, risk_score, risk_score_pc_1, risk_score_all))
+write_rds(fh_acs_scoring_by_county_distribute, path = "fh_acs_covid_county_comm_score.rds")
+write_csv(fh_acs_scoring_by_county_distribute, path="fh_acs_covid_county_comm_score.csv")
+```
+
+
+
+
 # State COVID-19 Community Risk Score
 ```{r state risk score}
-fh_acs_scoring_state <- fh_acs_scoring %>% select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score_all, lat,long, geoid, fips_place_tract)) %>% mutate(total_population = total_males + total_females)
+fh_acs_scoring_state <- fh_acs_scoring %>% select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score_all, risk_score_both_pc, lat,long, geoid, fips_place_tract)) %>% mutate(total_population = total_males + total_females)
 
 fh_acs_scoring_state <- fh_acs_scoring_state %>% cbind(fh_acs[non_na, c(established_disease_se, established_risk_se)])
 
@@ -340,15 +433,19 @@ pc_by_state$rotation
 fh_acs_scoring_by_state$pc_1 <- as.numeric(pc_by_state$x[, 1])
 fh_acs_scoring_by_state$pc_2 <- as.numeric(pc_by_state$x[, 2])
 
-fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_pc_1=as.numeric(scale(pc_1))) 
-fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_pc_2=as.numeric(scale(pc_2)))
-fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=as.numeric(scale(risk_score_all)))
+fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_pc_1=as.numeric(rescale(pc_1,to=c(0,100))))
+fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_pc_2=as.numeric(rescale(-pc_2,to=c(0,100))))
+fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_both_pc=rescale(risk_score_pc_1*.61 + risk_score_pc_2*.24, to=c(0,100))) # rescale according the the contribution of the PC
+fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=as.numeric(rescale(risk_score_all,to=c(0,100))))
 
-plot(fh_acs_scoring_by_state$risk_score_pc_1, fh_acs_scoring_by_state$risk_score_all)
-plot(fh_acs_scoring_by_state$risk_score_pc_2, fh_acs_scoring_by_state$risk_score_all)
+#plot(fh_acs_scoring_by_state$risk_score_pc_1, fh_acs_scoring_by_state$risk_score_all)
+#plot(fh_acs_scoring_by_state$risk_score_pc_2, fh_acs_scoring_by_state$risk_score_all)
 
-fh_acs_scoring_by_state_distribute <- fh_acs_scoring_by_state %>% select(c(established_cols, "stateabbr", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
-DT::datatable(fh_acs_scoring_by_state_distribute %>% select(stateabbr, risk_score_pc_1))
+fh_acs_scoring_by_state_distribute <- fh_acs_scoring_by_state %>% select(c(established_cols, "stateabbr", "risk_score_both_pc", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
+
+fh_acs_scoring_by_state_distribute <- fh_acs_scoring_by_state_distribute %>% mutate(rank_in_country=rank(risk_score_both_pc)) %>% mutate(risk_score = risk_score_both_pc)
+
+DT::datatable(fh_acs_scoring_by_state_distribute %>% select(stateabbr, risk_score,risk_score_all))
 write_rds(fh_acs_scoring_by_state_distribute, path = "fh_acs_covid_state_comm_score.rds")
 write_csv(fh_acs_scoring_by_state_distribute, path="fh_acs_covid_state_comm_score.csv")
 
