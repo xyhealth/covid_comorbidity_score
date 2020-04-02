@@ -338,6 +338,10 @@ fh_acs_scoring_county <- fh_acs_scoring %>% select(-c(pc_1, pc_2, risk_score_pc_
 location_info <- fh_acs_scoring %>% select(county_code, stateabbr) %>% unique() # go up a hierarchy
 fh_acs_scoring_county <- fh_acs_scoring_county %>% cbind(fh_acs[non_na, c(established_disease_se, established_risk_se)])
 
+county_counts <- fh_acs_scoring_county %>% group_by(county_code) %>% summarize(n=n())
+
+fh_acs_scoring_county <- fh_acs_scoring_county %>% left_join(county_counts) %>% filter(n > 1)
+
 for(i in 1:length(cols_to_total)) {
   fh_acs_scoring_county <- fh_acs_scoring_county %>% mutate(!!cols_total[i] := .data[[cols_to_total[i]]]*total_population)
 }
