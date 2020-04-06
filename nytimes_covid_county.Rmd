@@ -1,0 +1,26 @@
+---
+title: "Nytimes covid by county"
+output: html_notebook
+---
+
+Nytimes County Covid data
+
+- github: https://github.com/nytimes/covid-19-data/blob/master/us-counties.csv
+- counties: #from https://www.weather.gov/gis/Counties
+
+```{r}
+library(tidyverse)
+library(sf)
+```
+
+```{r}
+nyt_county <- read_csv(url('https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv'))
+county_shp <-  st_read("./shp/c_02jn20/c_02jn20.shp") 
+
+county_lat_lon <- county_shp %>% as_tibble() %>% select(FIPS, COUNTYNAME, LON, LAT)
+
+nyt_county <- nyt_county %>% left_join(county_lat_lon, by=c('fips'='FIPS'))
+
+write_csv(nyt_county, path='nyt_county_040320.csv')
+
+```

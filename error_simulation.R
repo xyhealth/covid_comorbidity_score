@@ -1,15 +1,18 @@
-# Chirag 
+# Chirag Patel
+# 04/02/2020
+
 
 library(tidyverse)
 library(progress)
 library(mvtnorm)
+library(scales)
 
 # load data
 fh_acs <- read_rds('./fh_acs.rds')
 fh_names <- read_rds('./fh_orig_tract.rds')
 fh_acs <- fh_acs %>% left_join(fh_names, by = c('geoid'='fips_tract'))
 place_vars <- names(fh_names)
-
+fh_acs <- fh_acs %>% group_by(geoid) %>% slice(1) %>% ungroup() # grab only the unique geoid
 
 #### calculate SEs of each variable for each tract
 fh_vars <- names(fh_acs)[grep('CrudePrev', names(fh_acs))]
@@ -55,71 +58,120 @@ established_disease <- c('CANCER_CrudePrev', 'ARTHRITIS_CrudePrev',  'STROKE_Cru
 disease_prefix <- strsplit(established_disease, '_') %>% map(function(arr) {arr[[1]]}) %>% unlist()
 established_risk <- c( 'CSMOKING_CrudePrev', 'BPHIGH_CrudePrev', 'OBESITY_CrudePrev', 'HIGHCHOL_CrudePrev')
 risk_prefix <- strsplit(established_risk, '_') %>% map(function(arr) {arr[[1]]}) %>% unlist()
-established_demographics <- c('male_over_65_pct', 'female_over_65_pct')
+
+
+fh_acs <- fh_acs %>% 
+  mutate(male_over_65=total_population*male_over_65_pct, 
+         female_over_65=female_over_65_pct*total_population,
+         female_over_65_SD=sqrt( (1-female_over_65_pct)*female_over_65_pct*total_population ),
+         male_over_65_SD=sqrt((1-male_over_65_pct)*male_over_65_pct*total_population)
+  )
+
+established_demographics <- c('male_over_65', 'female_over_65')
+demographics_prefix <- c('male_over_65', 'female_over_65')
 
 established_cols <- c(established_disease, established_risk, established_demographics)
-cols_to_boot <- c(established_cols, "total_population")
-
+cols_to_boot <- c(established_cols)
 non_na <- complete.cases(fh_acs[, cols_to_boot])
 fh_acs_toboot <- fh_acs[non_na, cols_to_boot] 
-fh_sd_toboot <- fh_acs[non_na, sprintf('%s_SD', c(disease_prefix, risk_prefix))]
 
-pop_corr <- cor(fh_acs[non_na, c(established_disease, established_risk)])
+fh_sd_toboot <- fh_acs[non_na, sprintf('%s_SD', c(disease_prefix, risk_prefix, demographics_prefix))]
+pop_corr <- cor(fh_acs[non_na, c(established_disease, established_risk, established_demographics)])
 ### for every census tract, simulate B datasets from pop_corr and crude_prev using mvtnorm
 ### for every nth (out of B), estimate the prcomp and then the 1st PC
 ### the predicted distribution around each tract is the SE
 
 set.seed(1)
-ind <- sample(nrow(fh_acs_toboot), 10000)
+ind <- sample(nrow(fh_acs_toboot), 10000) # sample only 10k rows to make it go quickly.
 fh_acs_toboot_sample <- fh_acs_toboot[ind, ]
 fh_sd_toboot_sample <- fh_sd_toboot[ind, ]
 
-n <- 100
-random_database <- vector("list", length = nrow(fh_acs_toboot_sample) )
-pb <- progress_bar$new(format = "  MVTNORM [:bar] :percent in :elapsed", total = nrow(fh_acs_toboot_sample), clear = FALSE, width= 50)
-for(ii in 1:nrow(fh_acs_toboot_sample)) {
-  sds <- as.numeric(fh_sd_toboot_sample[ii, ])
-  b <- sds %*% t(sds) 
-  cov_for_tract = b * pop_corr 
-  means <- as.matrix(fh_acs_toboot_sample[ii, c(established_disease, established_risk)])
-  random_database[[ii]] <- rmvnorm(n, mean = means, sigma=cov_for_tract) 
-  pb$tick()
+create_score <- function(predicted_pc) {
+  score <- rescale(
+    rescale(predicted_pc[, 1], to=c(0,100))*.61+rescale(-predicted_pc[, 2], to=c(0,100))*.24, to=c(0,100)
+  )
+  return(score)
 }
 
-### now need to create 1000 (n) datasets for each of the census tracts
-datasets <- vector("list", n)
-m <- length(c(established_disease, established_risk))
-pb <- progress_bar$new(format = "  REARRANGE [:bar] :percent in :elapsed", total = n, clear = FALSE, width= 50)
-for(ii in 1:n) {
-  newMatrix <- matrix(nrow=length(random_database), ncol=m)
-  for(jj in 1:length(random_database)) {
-    newMatrix[jj, ] <- random_database[[jj]][ii, ]
+sd_for_loading_number <- function(prcomp_list, loading_number=1) {
+  # takes in a list of pcs from randomized data and computes the SD
+  res <- prcomp_list %>% map(function(x) { abs(x$rotation[,loading_number]) } ) %>% bind_cols() %>% apply(1, sd)
+  return(res)
+}
+
+error_for_pca <- function(data_set, sd_data_set, correlation, main_data_set, n=100) {
+  random_database <- vector("list", length = nrow(data_set) )
+  pb <- progress_bar$new(format = "  MVTNORM [:bar] :percent in :elapsed", total = nrow(data_set), clear = FALSE, width= 50)
+  for(ii in 1:nrow(data_set)) {
+    sds <- as.numeric(sd_data_set[ii, ])
+    b <- sds %*% t(sds) 
+    cov_for_tract = b * correlation 
+    means <- as.matrix(data_set[ii, ])
+    random_database[[ii]] <- rmvnorm(n, mean = means, sigma=cov_for_tract) 
+    pb$tick()
   }
-  datasets[[ii]] <- newMatrix
-  pb$tick()
+  
+  ### now need to create 1000 (n) datasets for each of the census tracts
+  datasets <- vector("list", n)
+  m <- ncol(data_set)
+  pb <- progress_bar$new(format = "  REARRANGE [:bar] :percent in :elapsed", total = n, clear = FALSE, width= 50)
+  for(ii in 1:n) {
+    newMatrix <- matrix(nrow=length(random_database), ncol=m)
+    for(jj in 1:length(random_database)) {
+      newMatrix[jj, ] <- random_database[[jj]][ii, ]
+    }
+    datasets[[ii]] <- newMatrix
+    pb$tick()
+  }
+  
+  prcomp_for_datasets <- datasets %>% map(prcomp, scale.=TRUE, center=TRUE)
+  
+  
+  mDim <- ncol(data_set) 
+  loadingSD <- matrix(nrow=mDim, ncol = mDim)
+  for(m in 1:mDim) {
+    sds <- sd_for_loading_number(prcomp_for_datasets, loading_number = m) 
+    loadingSD[, m] <- sds
+  }
+  
+  
+  original_pc <- prcomp(main_data_set, scale. = TRUE, center = TRUE)
+  original_pc_minus_sd <- original_pc
+  original_pc_plus_sd <- original_pc
+  original_pc_minus_sd$rotation <- original_pc_minus_sd$rotation-5*loadingSD # go five up and five down .05/30k tests?
+  original_pc_plus_sd$rotation <- original_pc_plus_sd$rotation+5*loadingSD
+  
+  x_original <- predict(original_pc)
+  x_minus_sd <- predict(original_pc_minus_sd, main_data_set)
+  x_plus_sd <- predict(original_pc_plus_sd, main_data_set)
+  
+  score_original <- create_score(x_original)
+  score_minus_sd <- create_score(x_minus_sd)
+  score_plus_sd <- create_score(x_plus_sd)
+  
+  score_error <- abs(score_plus_sd - score_minus_sd)
+  return(score_error)
+  
 }
 
-prcomp_for_datasets <- datasets %>% map(prcomp, scale.=TRUE, center=TRUE)
-first_loading <- prcomp_for_datasets %>% map(function(x) { x$rotation[,1] } ) %>% bind_cols()
-second_loading <- prcomp_for_datasets %>% map(function(x) { x$rotation[,2] } ) %>% bind_cols()
+score_error <- error_for_pca(fh_acs_toboot_sample, fh_sd_toboot_sample, pop_corr, fh_acs_toboot, 100)
+errors <- list(score_error=score_error, non_na=non_na, pop_corr=pop_corr)
+write_rds(errors, path = './fh_acs_covid_comm_score_error.rds')
+## merge a file with the errors to send to andrew.ai
 
-apply(abs(first_loading), 1, sd)
-apply(abs(first_loading), 1, mean)
+comm_score_census <- read_rds('./fh_acs_covid_comm_score.rds')
+comm_score_census <- comm_score_census %>% mutate(risk_score_error=score_error)
+census_error <- comm_score_census %>% group_by(geoid) %>% summarize(risk_score_error=mean(risk_score_error))
+city_error <- comm_score_census %>% unite(place_state, placename, stateabbr, sep='|') %>% group_by(place_state) %>% summarize(risk_score_error=mean(risk_score_error))
+city_error <- city_error %>% separate(place_state, c('placename', 'stateabbr'), sep="\\|")
+state_error <- comm_score_census %>% group_by(stateabbr) %>% summarize(risk_score_error=mean(risk_score_error))
+county_error <- comm_score_census %>% group_by(county_code) %>% summarize(risk_score_error=mean(risk_score_error))
 
-prcomp(fh_acs_toboot_sample [, c(established_disease, established_risk)], scale. = T, center = T)$rotation[,1]
-prcomp(fh_acs_toboot_sample [, c(established_disease, established_risk)], scale. = T, center = T)$rotation[,2]
+write_csv(census_error, path = './fh_acs_covid_comm_score_census_error.csv')
+write_csv(city_error, path = './fh_acs_covid_comm_score_city_error.csv')
+write_csv(county_error, path = './fh_acs_covid_comm_score_county_error.csv')
+write_csv(state_error, path = './fh_acs_covid_comm_score_state_error.csv')
 
 
-
-#save(prcomp_for_datasets, prcomp_predicted_for_datasets, file='error_simulation_prcomp.Rdata')
-
-#load('./error_simulation/error_simulation_prcomp.Rdata')
-### now get the PCs from the simulations
-first_simulated_pc <-  matrix(nrow=nrow(fh_acs_toboot), ncol=length(prcomp_predicted_for_datasets))
-second_simulated_pc <-  matrix(nrow=nrow(fh_acs_toboot), ncol=length(prcomp_predicted_for_datasets))
-for(ii in 1:length(prcomp_predicted_for_datasets)) {
-  first_simulated_pc[, ii] <- prcomp_predicted_for_datasets[[ii]][, 1]
-  second_simulated_pc[, ii] <- prcomp_predicted_for_datasets[[ii]][, 2]
-}
 
 
