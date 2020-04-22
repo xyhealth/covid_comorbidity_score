@@ -172,6 +172,10 @@ write_csv(city_error, path = './fh_acs_covid_comm_score_city_error.csv')
 write_csv(county_error, path = './fh_acs_covid_comm_score_county_error.csv')
 write_csv(state_error, path = './fh_acs_covid_comm_score_state_error.csv')
 
+# We simulated the census-tract level prevalence of the different candidate diseases and risk factors. We estimated the standard devidation of the prevalences as a function of the size of the population of the tract and 
+# we futher assumed a covariance struvture between the disease prevalences to be the observed population correlation. Next, for each census tract, we simulated 100 times the prevalence of the diseases
+# and computed the principal components for each simulation. We obtained a distribution about the principal component "loadings". Next, we obtained the predicted
+# new projections for +/- 5 standard deviations of the loadings. The "robustness" score is the range of the score across the +/- 5SD of the loadings.
 
 
 
