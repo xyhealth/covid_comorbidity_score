@@ -8,39 +8,40 @@ output: html_notebook
 library(tidyverse)
 library(sf)
 library(lubridate)
+library(NBZIMM)
+library(MASS)
+library(lme4)
+```
+# Load in County data
+```{r}
 county_death <- read_csv(url('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv'), col_types=cols(.default = "c"))
-
 county_cases <- read_csv(url('https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv'), col_types=cols(.default = "c"))
-
 county_death_long <- county_death %>% gather(key="date", value="death", -(1:12))
 county_death_long <- county_death_long %>% mutate(date=mdy(date), death=as.numeric(death))
 county_death_long <- county_death_long %>% mutate(my_fips = str_sub(UID, 4))
-
 county_cases_long <- county_cases %>% gather(key="date", value="cases", -(1:12))
 county_cases_long <- county_cases_long %>% mutate(date=mdy(date), cases=as.numeric(cases))
 county_cases_long <- county_cases_long %>% mutate(my_fips = str_sub(UID, 4))
-
-
 county_shp <-  st_read("./shp/c_02jn20/c_02jn20.shp") 
 county_lat_lon <- county_shp %>% as_tibble() %>% select(FIPS, COUNTYNAME, LON, LAT)
 county_death_total <- county_death_long %>% filter(my_fips != "") %>% group_by(my_fips, Admin2) %>% summarize(num_death=sum(death)) %>% ungroup()
 county_cases_total <- county_cases_long %>% filter(my_fips != "") %>% group_by(my_fips, Admin2) %>% summarize(num_cases=sum(cases)) %>% ungroup()
-
 county_death_case_total <- county_death_total %>% left_join(county_cases_total)
-
-
 ## total case data per state
 state_cases <- read_csv(url('https://covidtracking.com/api/v1/states/current.csv'))
-
-```
-```{r}
-library(NBZIMM)
-library(MASS)
 ```
 
 
+```{r load raw data}
+## load the raw data
+source('data_prep_risk_score.R')
+```
+
 ```{r}
+county_total_population <- fh_acs_freeze %>% group_by(county_code) %>% summarize(num_tract=n(), total_population=sum(total_population))
+county_total_population  %>% summarize(min_pop=min(total_population), max_pop=max(total_population))
 risk_score_county <- read_rds('./fh_acs_covid_county_comm_score.rds')
+## do it for the overall total
 county_death_case_comm_score <- county_death_case_total %>% left_join(risk_score_county, by=c("my_fips"="county_code"))
 county_death_case_comm_score <- county_death_case_comm_score %>% mutate(fatality_rate = num_death / num_cases)
 ind <- complete.cases(county_death_case_comm_score[, c('num_death', 'risk_score_both_pc')])
@@ -48,19 +49,8 @@ county_death_score_cc <- county_death_case_comm_score[ind, ]
 county_death_score_cc <- county_death_score_cc %>% mutate(state_code = str_sub(my_fips, 1, 2))
 county_death_score_cc <- county_death_score_cc %>% left_join(state_cases, by=c('state_code'='fips'))
 
-mod <- glm.nb(num_death ~ risk_score_both_pc  + total_population + totalTestResults, data=county_death_score_cc)
-summary(mod)
-
-
-mod2 <- glmm.zinb(fixed=num_death ~ I(risk_score_both_pc/10) + scale(totalTestResults) +  offset(log(total_population)), random = ~1|state_code, data=county_death_score_cc)
-summary(mod2)
-
-mod2 <- glmm.zinb(fixed=num_death ~ risk_score_both_pc + offset(log(total_population)) + totalTestResults, random = ~1|state_code, data=county_death_score_cc)
-summary(mod2)
-
-
-
-
+death_mod <- glmm.zinb(fixed=num_death ~ I(risk_score_both_pc/10)  + scale(totalTestResults) +  offset(log(total_population)), random = ~1|state_code, data=county_death_score_cc)
+summary(death_mod)
 
 ```
 
