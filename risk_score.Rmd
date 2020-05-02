@@ -229,7 +229,7 @@ p_poverty
 
 
 ```{r SES predictors of C19 Risk Score}
-RUN_RF <- F
+RUN_RF <- T
 set.seed(123)
 fh_all_train_ind <- sample(nrow(fh_all), size=floor(nrow(fh_all)/2))
 train <- fh_all[fh_all_train_ind,]
@@ -244,7 +244,7 @@ summary(lm(predicted ~ actual, test_prediction_lm))
 
 if(RUN_RF) {
   
-  mod_rf <- randomForest(risk_score_both_pc ~ median_income + unemployment_pct + median_home_value + at_below_poverty_pct + unemployment_pct + non_employment_pct + less_than_high_school_pct + no_health_insurance_pct + more_than_one_occupant_per_room_pct + african_american_pct + hispanic_pct + asian_pct + other_race_pct, data=train, na.action=na.roughfix, ntree=1000, importance=T)
+mod_rf <- randomForest(risk_score_both_pc ~ median_income + unemployment_pct + median_home_value + at_below_poverty_pct + unemployment_pct + non_employment_pct + less_than_high_school_pct + no_health_insurance_pct + more_than_one_occupant_per_room_pct + african_american_pct + hispanic_pct + asian_pct + other_race_pct, data=train, na.action=na.roughfix, ntree=1000, importance=T)
   importance(mod_rf)
   test_prediction_rf <- tibble(predicted=predict(mod_rf, test), actual=test$risk_score_both_pc)
 predicted_cases_index <- complete.cases(test_prediction_rf)
@@ -255,7 +255,16 @@ p <- ggplot(test_prediction_rf, aes(actual, predicted))
 p <- p + geom_point(alpha=.1)
 p
 
+pred <- predict(mod_rf, fh_all)
+fh_all <- fh_all %>% mutate(risk_score_both_pc_residual = risk_score_both_pc-pred)
+  if(WRITE_OUTPUT) {
+    fh_all_ses_residual <- fh_all %>% dplyr::select(fips_place_tract, geoid, placename, stateabbr, risk_score_both_pc, risk_score_both_pc_residual)
+
+    write_rds(fh_all_ses_residual, path = "fh_acs_ses_residual_covid_comm_score.rds")
+   write_csv(fh_all_ses_residual, path="fh_acs_ses_residual_covid_comm_score.csv")
+  }
 }
+
 
 
 
