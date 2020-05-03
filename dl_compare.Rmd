@@ -1,0 +1,51 @@
+---
+title: "DL COVID 19 Risk Score"
+author: "Chirag J Patel"
+date: "5/2/2020"
+output: html_document
+---
+
+
+Compares the DL between the COVID-19 Risk Score:
+- raw vs. residuals after adjusting for SES/ACS from EDW
+
+
+```{r}
+source('data_prep_risk_score.R') ## 
+```
+
+```{r}
+library(tidyverse)
+adjusted <- read_csv('./dl/xydl_risk_score_residuals_tract_predictions_500Cities_VGG_static-images.csv') %>% select(-X1)
+raw <- read_csv('./dl/xydl_risk_score_tract_predictions_500Cities_VGG_static-images.csv') %>% select(-X1)
+
+summary(lm(true ~ predict, adjusted))
+summary(lm(true ~ predict, raw))
+
+```
+```{r}
+adjusted <- adjusted %>% rename(predict_adjusted = predict, true_adjusted=true)
+raw <- raw %>% rename(predict_raw =predict, true_raw=true)
+dl_results <- adjusted %>% left_join(raw)
+fh_acs_freeze <- fh_acs[non_na, ]  %>% left_join(dl_results, by=c('geoid'='tractid'))
+rmse_city <- fh_acs_freeze %>% mutate(residual_adjusted=true_adjusted-predict_adjusted, residual_raw=true_raw-predict_raw) %>% group_by(placename) %>% summarize(rmse_adjusted=sqrt(sum(residual_adjusted^2, na.rm=T)/sum(!is.na(residual_adjusted))), rmse_raw=sqrt(sum(residual_raw^2, na.rm=T)/sum(!is.na(residual_raw))))
+
+valid_cities <- fh_acs_freeze %>% group_by(placename) %>% summarize(num_valid_tracts = sum(!is.na(predict_adjusted))) %>% filter(num_valid_tracts >= 1)
+r2_city_adjusted <- fh_acs_freeze %>% filter(placename %in% valid_cities$placename) %>% split(.$placename) %>% map(~ lm( true_adjusted ~ predict_adjusted, data = .)) %>% map(summary) %>% map_dbl("r.squared") 
+
+r2_city_raw <- fh_acs_freeze %>% filter(placename %in% valid_cities$placename) %>% split(.$placename) %>% map(~ lm(true_raw ~ predict_raw, data = .)) %>% map(summary) %>% map_dbl("r.squared") 
+
+
+r2_city <- rbind(
+  tibble(r2=r2_city_adjusted,type='adjusted',placename=names(r2_city_adjusted)),
+  tibble(r2=r2_city_raw,type='raw',placename=names(r2_city_raw)) )
+p <- ggplot(r2_city, aes(r2, color=type)) + stat_ecdf()
+p
+
+p <- ggplot(r2_city %>% spread(type, r2), aes(raw, adjusted))
+p <- p + geom_point()
+p
+
+```
+
+
