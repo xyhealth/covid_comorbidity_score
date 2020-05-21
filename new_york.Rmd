@@ -1,0 +1,101 @@
+---
+title: "New York Cases and Deaths and COVID-19"
+output: html_notebook
+---
+
+
+As of 5/19/2020, New York City released a zipcode-level case and death count due to COVID-19. 
+- Is COVID-19 Community Risk Score associated with COVID-19 related deaths in NYC?
+- chirag@xy.ai
+- 5/20/20
+
+
+```{r load census and death data}
+library(tidyverse)
+library(MASS)
+nyc_deaths <- read_csv('./data-by-modzcta.csv') #or: ead_csv(url('https://raw.githubusercontent.com/nychealth/coronavirus-data/master/data-by-modzcta.csv')) # current for 5/20/20
+zcta_to_census <- read_csv(url('http://www2.census.gov/geo/docs/maps-data/data/rel/zcta_tract_rel_10.txt?#')) # census walk file from tract to ZCTA
+nyc_deaths$MODIFIED_ZCTA <- as.character(nyc_deaths$MODIFIED_ZCTA)
+nyc_census <- nyc_deaths %>% left_join(zcta_to_census, by=c('MODIFIED_ZCTA'='ZCTA5'))
+
+
+```
+
+```{r load raw and risk score data}
+## load the raw data
+source('data_prep_risk_score.R')
+risk_score <- read_rds('./scores/fh_acs_covid_comm_score.rds')
+
+# combine with SES variables
+risk_score_acs <- risk_score %>% left_join(fh_acs, by=c('geoid'='geoid'))
+nyc_census$GEOID <- as.character(nyc_census$GEOID)
+fh_acs_zip <- fh_acs %>% right_join(nyc_census %>% dplyr::select(c(MODIFIED_ZCTA, GEOID)), by=c('geoid'='GEOID'))
+risk_score_nyc <- risk_score_acs %>% right_join(nyc_census %>% dplyr::select(c(MODIFIED_ZCTA, GEOID, ZPOPPCT)), by=c('geoid'='GEOID'))
+
+
+risk_score_nyc <- risk_score_nyc %>% group_by(MODIFIED_ZCTA) %>% summarize(risk_score=weighted.mean(risk_score_both_pc, ZPOPPCT),
+                                                                          median_income = weighted.mean(b19013001,ZPOPPCT),
+                                                                          median_home_value = weighted.mean(b25077001, ZPOPPCT),
+                                                                          no_health_insurance_pct=sum(b27001005 + b27001008 + b27001011 + b27001014 + b27001017 + b27001020 + b27001023 + b27001026 + b27001029 + b27001033 + b27001036 + b27001039 + b27001042 + b27001045 + b27001048 + b27001051 + b27001054 + b27001057)/sum(b27001001),
+                                                                          african_american_pct = sum(c02003004) / sum(c02003001),
+                                                                          mexican_pct = sum(b03001004) / sum(b03001001),
+                                                                          hispanic_pct = sum(b03001003) / sum(b03001001),
+                                                                          asian_pct = sum(c02003006) / sum(c02003001),
+                                                                          white_pct = sum(c02003003) / sum(c02003001),
+                                                                          unemployment_pct = sum(b23025005 ) / sum(b23025001),
+                                                                          less_than_high_school_pct = sum(b15003002 + b15003003 + b15003004 + b15003005 + b15003006 + b15003007 + b15003008 + b15003009 + b15003010 + b15003011 + b15003012 + b15003013 + b15003014 + b15003015 + b15003016) / sum(b15003001),
+                                                                          college_pct = sum(b15003021 + b15003022 + b15003023 + b15003024 + b15003025) / sum(b15003001),
+                                                                          at_below_poverty_pct = sum(b17001003 + b17001017 ) / sum(b17001001),
+                                                                          more_than_one_occupant_per_room_pct = sum(b25014005 + b25014006 + b25014007 + b25014011 + b25014012 + b25014013) / sum(b25014001)
+)
+                                                                           
+risk_score_nyc <- risk_score_nyc %>% right_join(nyc_deaths)
+```
+
+
+```{r plot cases and deaths}
+
+
+p  <- ggplot(risk_score_nyc, aes(COVID_CASE_RATE, COVID_DEATH_RATE))
+p <- p + geom_point()
+p
+
+p  <- ggplot(risk_score_nyc, aes(risk_score, COVID_CASE_RATE))
+p <- p + geom_point()
+p
+
+p  <- ggplot(risk_score_nyc, aes(risk_score, COVID_DEATH_RATE))
+p <- p + geom_point()
+p
+
+
+```
+
+
+```{r model}
+mod <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR, risk_score_nyc)
+summary(mod)
+
+mod_2 <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR + COVID_CASE_RATE, risk_score_nyc)
+summary(mod)
+
+mod_3 <- glm( COVID_DEATH_COUNT ~ risk_score + offset(log(POP_DENOMINATOR)), data=risk_score_nyc, family="poisson")
+mod_4 <- glm( COVID_DEATH_COUNT ~ I(risk_score/10) + male_over_65_pct + female_over_65_pct +median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc, family="poisson")
+summary(mod_4)
+
+mod_5 <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc)
+summary(mod_5)
+
+mod_5 <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc)
+summary(mod_5)
+
+mod_6 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + POP_DENOMINATOR, data=risk_score_nyc)
+summary(mod_6)
+
+mod_7 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc)
+summary(mod_7)
+
+mod_8 <- lm(COVID_DEATH_RATE ~  median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc)
+summary(mod_8)
+
+```

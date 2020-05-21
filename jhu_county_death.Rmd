@@ -1,5 +1,5 @@
 ---
-title: "JHU County"
+title: "Correlating death and cases to C19 Risk Score"
 output: html_notebook
 ---
 
@@ -42,7 +42,7 @@ source('data_prep_risk_score.R')
 fh_acs_freeze <- fh_acs[non_na, ]
 county_total_population <- fh_acs_freeze %>% group_by(county_code) %>% summarize(num_tract=n(), total_population=sum(total_population))
 county_total_population  %>% summarize(min_pop=min(total_population), max_pop=max(total_population))
-risk_score_county <- read_rds('./fh_acs_covid_county_comm_score.rds')
+risk_score_county <- read_rds('./scores/fh_acs_covid_county_comm_score.rds')
 ## do it for the overall total
 county_death_case_comm_score <- county_death_case_total %>% left_join(risk_score_county, by=c("my_fips"="county_code"))
 county_death_case_comm_score <- county_death_case_comm_score %>% mutate(fatality_rate = (num_death+1) / (num_cases+1) )
@@ -51,7 +51,7 @@ county_death_score_cc <- county_death_case_comm_score[ind, ]
 county_death_score_cc <- county_death_score_cc %>% mutate(state_code = str_sub(my_fips, 1, 2))
 county_death_score_cc <- county_death_score_cc %>% left_join(state_cases, by=c('state_code'='fips'))
 
-
+head(county_death_case_comm_score)
 ```
 
 ```{r}
@@ -65,6 +65,43 @@ p
 
 death_mod <- glmm.zinb(fixed=num_death ~ I(risk_score_both_pc/10)  + scale(totalTestResults) +  offset(log(total_population)), random = ~1|state_code, data=county_death_score_cc)
 summary(death_mod)
+
+```
+
+Days since 1 confirmed death
+```{r}
+
+county_death_long <- county_death_long %>% rename(date_death=date)
+test_county <- county_death_long %>% filter(my_fips == '01001') 
+county_time_to_first <- function(aCounty) {
+  firstDate <- aCounty %>% filter(death == 1) %>% arrange(date_death) %>% summarize(date_death=first(date_death) )%>% dplyr::select(date_death) %>% rename(first_death=date_death)
+  aCounty <- cbind(aCounty, firstDate)
+  aCounty <- aCounty %>% mutate(days_since_first_death=date_death - first_death)
+  aCounty
+}
+
+county_death_long <- county_death_long %>% split(.$my_fips) %>% map(~county_time_to_first(.x)) %>% rbind_list()
+fips_to_try <- c('25025', '36061')
+d <- county_death_long %>% filter(my_fips %in% fips_to_try)
+p <- ggplot(d, aes(days_since_first_death, death+1, color=Admin2)) 
+p <- p + geom_point() + scale_y_log10()
+p
+
+d <- county_death_long %>% filter(Province_State == 'New York')
+p <- ggplot(d %>% filter(days_since_first_death >= 0, days_since_first_death <= 40), aes(days_since_first_death, death+1, color=Admin2)) 
+p <- p + geom_point() + scale_y_log10()
+p
+
+
+
+quantile(risk_score_county$risk_score_both_pc)
+
+
+death_trajectory_by_group <- county_death_long_2 %>% filter(Province_State == 'New York') %>% group_by(risk_group, days_since_first_death) %>% summarize(mean_death=mean(death)) %>% ungroup()
+
+p <- ggplot(death_trajectory_by_group, aes(days_since_first_death, mean_death, color=risk_group))
+p <- p +geom_point() 
+p 
 
 ```
 

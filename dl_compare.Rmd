@@ -22,12 +22,27 @@ raw <- read_csv('./dl/xydl_risk_score_tract_predictions_500Cities_VGG_static-ima
 summary(lm(true ~ predict, adjusted))
 summary(lm(true ~ predict, raw))
 
+
+
+p <- ggplot(adjusted, aes(true, predict))
+p <- p + geom_point(alpha=0.5) + ggtitle('Residual COVID-19 Risk Score:R^2 = 0.4')
+p <- p + geom_abline()
+p
+
+p <- ggplot(raw, aes(true, predict))
+p <- p + geom_point(alpha=0.5) + ggtitle('COVID-19 Risk Score:R^2 = 0.67')
+p <- p + geom_abline()
+p
+
+
 ```
 ```{r}
 adjusted <- adjusted %>% rename(predict_adjusted = predict, true_adjusted=true)
 raw <- raw %>% rename(predict_raw =predict, true_raw=true)
 dl_results <- adjusted %>% left_join(raw)
 fh_acs_freeze <- fh_acs[non_na, ]  %>% left_join(dl_results, by=c('geoid'='tractid'))
+ 
+
 rmse_city <- fh_acs_freeze %>% mutate(residual_adjusted=true_adjusted-predict_adjusted, residual_raw=true_raw-predict_raw) %>% group_by(placename) %>% summarize(rmse_adjusted=sqrt(sum(residual_adjusted^2, na.rm=T)/sum(!is.na(residual_adjusted))), rmse_raw=sqrt(sum(residual_raw^2, na.rm=T)/sum(!is.na(residual_raw))))
 
 valid_cities <- fh_acs_freeze %>% group_by(placename) %>% summarize(num_valid_tracts = sum(!is.na(predict_adjusted))) %>% filter(num_valid_tracts >= 1)
@@ -39,12 +54,29 @@ r2_city_raw <- fh_acs_freeze %>% filter(placename %in% valid_cities$placename) %
 r2_city <- rbind(
   tibble(r2=r2_city_adjusted,type='adjusted',placename=names(r2_city_adjusted)),
   tibble(r2=r2_city_raw,type='raw',placename=names(r2_city_raw)) )
+
+rmse_city_long <- gather(rmse_city, type, rmse, -placename)
+
+
+p <- ggplot(rmse_city_long, aes(rmse, color=type)) + stat_ecdf()
+p + ylab('quantile')
+
+
 p <- ggplot(r2_city, aes(r2, color=type)) + stat_ecdf()
-p
+p + ylab('quantile')
+
 
 p <- ggplot(r2_city %>% spread(type, r2), aes(raw, adjusted))
 p <- p + geom_point()
 p
+
+p <- ggplot(r2_city, aes(r2, color=type))
+p <- p + geom_histogram()
+p
+
+mean(r2_city %>% filter(type=='adjusted') %>% pull(r2), na.rm = T)
+quantile(r2_city %>% filter(type=='adjusted') %>% pull(r2), na.rm = T)
+quantile(r2_city %>% filter(type=='raw') %>% pull(r2), na.rm = T)
 
 ```
 
