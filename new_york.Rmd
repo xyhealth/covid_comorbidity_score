@@ -1,6 +1,8 @@
 ---
 title: "New York Cases and Deaths and COVID-19"
-output: html_notebook
+output:
+  html_document:
+    df_print: paged
 ---
 
 
@@ -52,6 +54,7 @@ risk_score_nyc <- risk_score_nyc %>% group_by(MODIFIED_ZCTA) %>% summarize(risk_
 risk_score_nyc <- risk_score_nyc %>% right_join(nyc_deaths)
 ```
 
+# COVID-19 Risk Score vs. Case and Death Rate (zipcode level)
 
 ```{r plot cases and deaths}
 
@@ -72,30 +75,28 @@ p
 ```
 
 
-```{r model}
+```{r results='asis', message = FALSE}
+library(stargazer)
 mod <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR, risk_score_nyc)
-summary(mod)
+#summary(mod)
 
 mod_2 <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR + COVID_CASE_RATE, risk_score_nyc)
-summary(mod)
-
+#summary(mod)
 mod_3 <- glm( COVID_DEATH_COUNT ~ risk_score + offset(log(POP_DENOMINATOR)), data=risk_score_nyc, family="poisson")
-mod_4 <- glm( COVID_DEATH_COUNT ~ I(risk_score/10) + male_over_65_pct + female_over_65_pct +median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc, family="poisson")
-summary(mod_4)
-
 mod_5 <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc)
-summary(mod_5)
+#summary(mod_5)
 
-mod_5 <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc)
-summary(mod_5)
 
 mod_6 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + POP_DENOMINATOR, data=risk_score_nyc)
-summary(mod_6)
+#summary(mod_6)
 
 mod_7 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc)
-summary(mod_7)
+#summary(mod_7)
 
 mod_8 <- lm(COVID_DEATH_RATE ~  median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc)
-summary(mod_8)
+#summary(mod_8)
+
+stargazer(mod_5, type = 'html', style = 'all')
+stargazer(mod_7, mod_8, type = 'html')
 
 ```
