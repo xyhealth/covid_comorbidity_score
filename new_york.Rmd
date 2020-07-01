@@ -14,7 +14,10 @@ As of 5/19/2020, New York City released a zipcode-level case and death count due
 
 ```{r load census and death data}
 library(tidyverse)
+library(ggrepel)
 library(MASS)
+library(stargazer)
+library(sjPlot)
 nyc_deaths <- read_csv('./data-by-modzcta.csv') #or: ead_csv(url('https://raw.githubusercontent.com/nychealth/coronavirus-data/master/data-by-modzcta.csv')) # current for 5/20/20
 zcta_to_census <- read_csv(url('http://www2.census.gov/geo/docs/maps-data/data/rel/zcta_tract_rel_10.txt?#')) # census walk file from tract to ZCTA
 nyc_deaths$MODIFIED_ZCTA <- as.character(nyc_deaths$MODIFIED_ZCTA)
@@ -69,34 +72,34 @@ p
 
 p  <- ggplot(risk_score_nyc, aes(risk_score, COVID_DEATH_RATE))
 p <- p + geom_point()
+p <- p + geom_text_repel(data=risk_score_nyc %>% filter(risk_score > 45), aes(risk_score, COVID_DEATH_RATE, label=MODIFIED_ZCTA))
 p
+
 
 
 ```
 
 
 ```{r results='asis', message = FALSE}
-library(stargazer)
+
 mod <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR, risk_score_nyc)
-#summary(mod)
-
 mod_2 <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR + COVID_CASE_RATE, risk_score_nyc)
-#summary(mod)
 mod_3 <- glm( COVID_DEATH_COUNT ~ risk_score + offset(log(POP_DENOMINATOR)), data=risk_score_nyc, family="poisson")
-mod_5 <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc)
-#summary(mod_5)
+mod_5 <- glm.nb( COVID_DEATH_COUNT ~ risk_score + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc)
+mod_6 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct + college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + POP_DENOMINATOR, data=risk_score_nyc)
 
+mod_7 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc)
 
-mod_6 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + POP_DENOMINATOR, data=risk_score_nyc)
-#summary(mod_6)
-
-mod_7 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc)
-#summary(mod_7)
 
 mod_8 <- lm(COVID_DEATH_RATE ~  median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc)
-#summary(mod_8)
 
-stargazer(mod_5, type = 'html', style = 'all')
-stargazer(mod_7, mod_8, type = 'html')
+
+
+mod_5b <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score > 40) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc)
+
+
+
+
+plot_model(mod_5, type="std2", axis.lim = c(.25, 3))
 
 ```

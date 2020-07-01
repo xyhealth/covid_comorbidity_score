@@ -1,0 +1,47 @@
+---
+title: "Nursing Home Deaths"
+output: html_notebook
+---
+
+```{r}
+library(tidyverse)
+library(ggrepel)
+library(MASS)
+library(sp)
+library(sf)
+
+nursing_data <- read_csv('COVID-19_Nursing_Home_Dataset.csv') # https://data.cms.gov/stories/s/COVID-19-Nursing-Home-Data/bkwz-xpvg
+nursing_data_point <- nursing_data %>% filter(!is.na(Geolocation), `Week Ending` == '05/31/2020')
+nursing_data_point <- st_as_sf(nursing_data_point, wkt='Geolocation')
+nursing_data_point <- nursing_data_point %>% st_set_crs(4326)
+```
+
+```{r}
+## load the raw data
+source('data_prep_risk_score.R')
+risk_score <- read_rds('./scores/fh_acs_covid_comm_score.rds')
+fh_shape <- read_rds('./fh_shape.rds')
+risk_score_shape <- merge(fh_shape, risk_score, by.x='locationid', by.y='geoid')
+risk_score_shape <- risk_score_shape %>% st_as_sf() 
+risk_score_shape <- risk_score_shape %>% st_set_crs(4326)
+# what is the redundancy?
+#
+
+risk_hosp <- st_join(risk_score_shape, nursing_data_point)
+risk_hosp_2 <- risk_hosp %>% filter(`Submitted Data` == 'Y')
+```
+
+
+```{r}
+
+risk_hosp_sum <- risk_hosp_2 %>% group_by(geoid) %>% summarize(resident_death=sum(`Residents Total COVID-19 Deaths`), risk_score=mean(risk_score_both_pc))
+ny <- risk_hosp_2 %>% filter(placename == 'New York') %>% dplyr::select(`Residents Total COVID-19 Deaths`, `Provider Name`, `Provider City`, geoid, `Provider Zip Code`, risk_score_both_pc)
+p <- ggplot(risk_hosp_sum, aes(risk_score, log10(resident_death+1)))
+p <- p + geom_point()
+p
+p <- ggplot(ny, aes(risk_score_both_pc, log10(`Residents Total COVID-19 Deaths`+1)))
+p <- p + geom_point()
+p
+
+
+```
