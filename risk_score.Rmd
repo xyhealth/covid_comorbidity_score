@@ -4,9 +4,9 @@ output:
     df_print: paged
 ---
 
-#Covid-19 Community Score
-
-- last updated: 04/02/2020
+# Covid-19 Community Score
+- finished: 04/02/2020
+- minor update 09/20/20
 - chirag@xy.ai
 
 
@@ -21,10 +21,11 @@ library(DT)
 library(scales)
 library(corrr)
 library(randomForest)
+WRITE_OUTPUT <- FALSE
+RUN_RF <- FALSE
 ```
 
 ```{r load and prepare data}
-WRITE_OUTPUT <- FALSE
 source('data_prep_risk_score.R') ## 
 ```
 
@@ -113,8 +114,6 @@ p
 pc_established <- prcomp(fh_acs_established,center=T, scale.=T)
 summary(pc_established)
 pc_established$rotation [, c(1,2)]
-
-
 ```
 
 
@@ -135,7 +134,7 @@ fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_both_pc=rescale(risk_scor
 fh_acs_scoring <- fh_acs_scoring %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=rescale(risk_score_all, to=c(0,100)))
 
 ## load in the errors 
-comm_score_error <- read_rds('./fh_acs_covid_comm_score_error.rds') # see error_simulation.R
+comm_score_error <- read_rds('./scores/fh_acs_covid_comm_score_error.rds') # see error_simulation.R
 fh_acs_scoring <- fh_acs_scoring %>% mutate(score_error=comm_score_error$score_error)
 fh_acs_scoring %>% arrange(score_error) %>% dplyr::select(c(score_error, placename)) 
 
@@ -155,14 +154,6 @@ p <- p + geom_text_repel(data=fh_acs_scoring_top, aes(risk_score_pc_1, risk_scor
 p <- p + theme_fivethirtyeight() + theme(axis.title = element_text(), legend.position = 'none') + labs(x='Component 1 (61%)', y='Component 2 (24%)')
 p
 
-# p <- ggplot(fh_acs_scoring, aes(risk_score_pc_1, risk_score_all)) 
-# p <- p + geom_point(alpha=0.5, color='gray')
-# p
-# 
-# p <- ggplot(fh_acs_scoring, aes(risk_score_both_pc, risk_score_pc_1)) 
-# p <- p + geom_point(alpha=0.5, color='gray')
-# p
-# 
 
 
 ## now get the variation per city for the risk score
@@ -229,7 +220,6 @@ p_poverty
 
 
 ```{r SES predictors of C19 Risk Score}
-RUN_RF <- T
 set.seed(123)
 fh_all_train_ind <- sample(nrow(fh_all), size=floor(nrow(fh_all)/2))
 train <- fh_all[fh_all_train_ind,]
@@ -288,9 +278,8 @@ if(WRITE_OUTPUT) {
 ```
 
 # City COVID-19 Community Risk Score
-
 ```{r city risk score}
-fh_acs_scoring_city <- fh_acs_scoring %>% select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score, risk_score_both_pc, risk_score_all, lat,long, geoid, fips_place_tract)) %>% unite(place_state, placename, stateabbr, sep="|")
+fh_acs_scoring_city <- fh_acs_scoring %>% dplyr::select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score, risk_score_both_pc, risk_score_all, lat,long, geoid, fips_place_tract)) %>% unite(place_state, placename, stateabbr, sep="|")
 fh_acs_scoring_city <- fh_acs_scoring_city %>% mutate(total_population = total_males + total_females)
 
 
@@ -360,9 +349,9 @@ fh_acs_scoring_by_city <- fh_acs_scoring_by_city %>% separate(place_state, c("pl
   
 
 top_per_state <- fh_acs_scoring_by_city %>% group_by(stateabbr) %>% top_n(5,risk_score_pc_1) %>% ungroup() 
-DT::datatable(top_per_state %>% select(stateabbr, placename, risk_score_pc_1, risk_score_both_pc, risk_score_all))
+DT::datatable(top_per_state %>% dplyr::select(stateabbr, placename, risk_score_pc_1, risk_score_both_pc, risk_score_all))
 
-fh_acs_scoring_by_city_distribute <- fh_acs_scoring_by_city %>% select(c(established_cols, "placename", "stateabbr", "risk_score_both_pc", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
+fh_acs_scoring_by_city_distribute <- fh_acs_scoring_by_city %>% dplyr::select(c(established_cols, "placename", "stateabbr", "risk_score_both_pc", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
 
 fh_acs_scoring_by_city_distribute <- fh_acs_scoring_by_city_distribute %>% mutate(risk_score = risk_score_both_pc)
 fh_acs_scoring_by_city_distribute <- fh_acs_scoring_by_city_distribute %>% group_split(stateabbr) %>% map(function(.x) { .x %>% mutate(rank_in_state=rank(-risk_score)) }) %>% bind_rows()
@@ -374,8 +363,8 @@ if(WRITE_OUTPUT) {
 
 # County COVID-19 Community Risk Score
 ```{r county risk score}
-fh_acs_scoring_county <- fh_acs_scoring %>% select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score_all, risk_score_both_pc, lat,long, geoid, fips_place_tract)) %>% mutate(total_population = total_males + total_females)
-location_info <- fh_acs_scoring %>% select(county_code, stateabbr) %>% unique() # go up a hierarchy
+fh_acs_scoring_county <- fh_acs_scoring %>% dplyr::select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score_all, risk_score_both_pc, lat,long, geoid, fips_place_tract)) %>% mutate(total_population = total_males + total_females)
+location_info <- fh_acs_scoring %>% dplyr::select(county_code, stateabbr) %>% unique() # go up a hierarchy
 fh_acs_scoring_county <- fh_acs_scoring_county %>% cbind(fh_acs[non_na, c(established_disease_se, established_risk_se)])
 
 county_counts <- fh_acs_scoring_county %>% group_by(county_code) %>% summarize(n=n())
@@ -422,13 +411,13 @@ fh_acs_scoring_by_county <- fh_acs_scoring_by_county %>% mutate(risk_score_all=r
 plot(fh_acs_scoring_by_county$risk_score_pc_1, fh_acs_scoring_by_county$risk_score_all)
 plot(fh_acs_scoring_by_county$risk_score_pc_2, fh_acs_scoring_by_county$risk_score_all)
 
-fh_acs_scoring_by_county_distribute <- fh_acs_scoring_by_county %>% select(c(established_cols, "county_code", "risk_score_both_pc", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
+fh_acs_scoring_by_county_distribute <- fh_acs_scoring_by_county %>% dplyr::select(c(established_cols, "county_code", "risk_score_both_pc", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
 
 fh_acs_scoring_by_county_distribute <- fh_acs_scoring_by_county_distribute %>% mutate(risk_score = risk_score_both_pc)
 fh_acs_scoring_by_county_distribute <- fh_acs_scoring_by_county_distribute %>% left_join(location_info)
 fh_acs_scoring_by_county_distribute <- fh_acs_scoring_by_county_distribute %>% group_split(stateabbr) %>% map(function(.x) { .x %>% mutate(rank_in_state=rank(-risk_score)) }) %>% bind_rows()
 
-DT::datatable(fh_acs_scoring_by_county_distribute %>% select(county_code, stateabbr, risk_score, risk_score_pc_1, risk_score_all))
+DT::datatable(fh_acs_scoring_by_county_distribute %>% dplyr::select(county_code, stateabbr, risk_score, risk_score_pc_1, risk_score_all))
 if(WRITE_OUTPUT) {
   write_rds(fh_acs_scoring_by_county, path = "fh_acs_covid_county_comm_score.rds")
   write_csv(fh_acs_scoring_by_county_distribute, path="fh_acs_covid_county_comm_score.csv")
@@ -436,11 +425,9 @@ if(WRITE_OUTPUT) {
 ```
 
 
-
-
 # State COVID-19 Community Risk Score
 ```{r state risk score}
-fh_acs_scoring_state <- fh_acs_scoring %>% select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score_all, risk_score_both_pc, lat,long, geoid, fips_place_tract)) %>% mutate(total_population = total_males + total_females)
+fh_acs_scoring_state <- fh_acs_scoring %>% dplyr::select(-c(pc_1, pc_2, risk_score_pc_1, risk_score_pc_2, risk_score_all, risk_score_both_pc, lat,long, geoid, fips_place_tract)) %>% mutate(total_population = total_males + total_females)
 
 fh_acs_scoring_state <- fh_acs_scoring_state %>% cbind(fh_acs[non_na, c(established_disease_se, established_risk_se)])
 
@@ -484,14 +471,12 @@ fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_pc_2=as
 fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_both_pc=rescale(risk_score_pc_1*.61 + risk_score_pc_2*.24, to=c(0,100))) # rescale according the the contribution of the PC
 fh_acs_scoring_by_state <- fh_acs_scoring_by_state %>% mutate(risk_score_all=rowSums(.[established_cols])) %>% mutate(risk_score_all=as.numeric(rescale(risk_score_all,to=c(0,100))))
 
-#plot(fh_acs_scoring_by_state$risk_score_pc_1, fh_acs_scoring_by_state$risk_score_all)
-#plot(fh_acs_scoring_by_state$risk_score_pc_2, fh_acs_scoring_by_state$risk_score_all)
 
-fh_acs_scoring_by_state_distribute <- fh_acs_scoring_by_state %>% select(c(established_cols, "stateabbr", "risk_score_both_pc", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
+fh_acs_scoring_by_state_distribute <- fh_acs_scoring_by_state %>% dplyr::select(c(established_cols, "stateabbr", "risk_score_both_pc", "risk_score_pc_1", "risk_score_pc_2", "risk_score_all", "total_population")) 
 
 fh_acs_scoring_by_state_distribute <- fh_acs_scoring_by_state_distribute %>% mutate(rank_in_country=rank(risk_score_both_pc)) %>% mutate(risk_score = risk_score_both_pc)
 
-DT::datatable(fh_acs_scoring_by_state_distribute %>% select(stateabbr, risk_score,risk_score_all))
+DT::datatable(fh_acs_scoring_by_state_distribute %>% dplyr::select(stateabbr, risk_score,risk_score_all))
 if(WRITE_OUTPUT) {
   write_rds(fh_acs_scoring_by_state, path = "fh_acs_covid_state_comm_score.rds")
   write_csv(fh_acs_scoring_by_state_distribute, path="fh_acs_covid_state_comm_score.csv")

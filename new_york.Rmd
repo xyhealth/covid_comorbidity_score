@@ -9,8 +9,9 @@ output:
 As of 5/19/2020, New York City released a zipcode-level case and death count due to COVID-19. 
 - Is COVID-19 Community Risk Score associated with COVID-19 related deaths in NYC?
 - chirag@xy.ai
-- 5/20/20
-
+- 05/20/20
+- modified 09/26/20 with new September death rates
+- see: https://github.com/nychealth/coronavirus-data
 
 ```{r load census and death data}
 library(tidyverse)
@@ -18,7 +19,20 @@ library(ggrepel)
 library(MASS)
 library(stargazer)
 library(sjPlot)
-nyc_deaths <- read_csv('./data-by-modzcta.csv') #or: ead_csv(url('https://raw.githubusercontent.com/nychealth/coronavirus-data/master/data-by-modzcta.csv')) # current for 5/20/20
+library(cowplot)
+```
+
+# Load NYC data
+```{r}
+## MAY 2020
+nyc_deaths_may <- read_csv('./external_data/data-by-modzcta_052120.csv') #or: ead_csv(url('https://raw.githubusercontent.com/nychealth/coronavirus-data/master/data-by-modzcta.csv')) # current for 5/20/20
+nyc_deaths_may <- nyc_deaths_may %>% mutate(TOTAL_COVID_TESTS = NA, date_download='05/20/20')
+
+## SEPT 2020
+nyc_deaths_sept <- read_csv('./external_data/data-by-modzcta_092620.csv') 
+nyc_deaths_sept <- nyc_deaths_sept %>% mutate(date_download = '09/26/20')
+
+nyc_deaths <- rbind(nyc_deaths_sept, nyc_deaths_may)
 zcta_to_census <- read_csv(url('http://www2.census.gov/geo/docs/maps-data/data/rel/zcta_tract_rel_10.txt?#')) # census walk file from tract to ZCTA
 nyc_deaths$MODIFIED_ZCTA <- as.character(nyc_deaths$MODIFIED_ZCTA)
 nyc_census <- nyc_deaths %>% left_join(zcta_to_census, by=c('MODIFIED_ZCTA'='ZCTA5'))
@@ -62,15 +76,15 @@ risk_score_nyc <- risk_score_nyc %>% right_join(nyc_deaths)
 ```{r plot cases and deaths}
 
 
-p  <- ggplot(risk_score_nyc, aes(COVID_CASE_RATE, COVID_DEATH_RATE))
+p  <- ggplot(risk_score_nyc, aes(COVID_CASE_RATE, COVID_DEATH_RATE, color=date_download))
 p <- p + geom_point()
 p
 
-p  <- ggplot(risk_score_nyc, aes(risk_score, COVID_CASE_RATE))
+p  <- ggplot(risk_score_nyc, aes(risk_score, COVID_CASE_RATE, color=date_download))
 p <- p + geom_point()
 p
 
-p  <- ggplot(risk_score_nyc, aes(risk_score, COVID_DEATH_RATE))
+p  <- ggplot(risk_score_nyc, aes(risk_score, COVID_DEATH_RATE, color=date_download))
 p <- p + geom_point()
 p <- p + geom_text_repel(data=risk_score_nyc %>% filter(risk_score > 45), aes(risk_score, COVID_DEATH_RATE, label=MODIFIED_ZCTA))
 p
@@ -79,27 +93,32 @@ p
 
 ```
 
+# Model the death rate
 
 ```{r results='asis', message = FALSE}
 
-mod <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR, risk_score_nyc)
-mod_2 <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR + COVID_CASE_RATE, risk_score_nyc)
-mod_3 <- glm( COVID_DEATH_COUNT ~ risk_score + offset(log(POP_DENOMINATOR)), data=risk_score_nyc, family="poisson")
-mod_5 <- glm.nb( COVID_DEATH_COUNT ~ risk_score + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc)
-mod_6 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct + college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + POP_DENOMINATOR, data=risk_score_nyc)
+mod <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR, risk_score_nyc %>% filter(date_download == '05/20/20'))
+mod_2 <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR + COVID_CASE_RATE, risk_score_nyc %>% filter(date_download == '05/20/20'))
+#mod_3 <- glm( COVID_DEATH_COUNT ~ risk_score + offset(log(POP_DENOMINATOR)), data=risk_score_nyc, family="poisson")
 
-mod_7 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc)
+mod_5 <- glm.nb( COVID_DEATH_COUNT ~ risk_score + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc %>% filter(date_download == '05/20/20'))
 
-
-mod_8 <- lm(COVID_DEATH_RATE ~  median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc)
+mod_5_sept <- glm.nb( COVID_DEATH_COUNT ~ risk_score + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc %>% filter(date_download == '09/26/20'))
 
 
+mod_6 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct + college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + POP_DENOMINATOR, data=risk_score_nyc %>% filter(date_download == '05/20/20'))
 
-mod_5b <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score > 40) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc)
+mod_7 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc %>% filter(date_download == '05/20/20'))
+
+
+mod_8 <- lm(COVID_DEATH_RATE ~  median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + white_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc %>% filter(date_download == '05/20/20'))
 
 
 
+mod_5b <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score > 40) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc %>% filter(date_download == '05/20/20'))
 
-plot_model(mod_5, type="std2", axis.lim = c(.25, 3))
+may_model_plot <- plot_model(mod_5, type="std2", axis.lim = c(.25, 3))
+sept_model_plot <- plot_model(mod_5_sept, type="std2", axis.lim = c(.25, 3))
+plot_grid(may_model_plot,sept_model_plot, labels = c('May 2020', 'Sept 2020'))
 
 ```
