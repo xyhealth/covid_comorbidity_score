@@ -37,7 +37,7 @@ We downloaded case and death count data on a zipcode tabulation area (ZCTA) of N
 
 
 ## COVID-19 Score Pipeline 
-- risk_score.Rmd
+- risk_score.Rmd (see risk_score.html)
 
 ## Supporting database scripts
 - get_acs_data_edw.R
