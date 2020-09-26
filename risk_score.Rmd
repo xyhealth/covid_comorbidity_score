@@ -212,10 +212,6 @@ p_poverty <- p_poverty + geom_point(data=high_poverty, aes(I(100*at_below_povert
 p_poverty <- p_poverty + geom_text_repel(data=high_poverty, aes(I(100*at_below_poverty_pct), risk_score_both_pc, label=paste(placename, stateabbr)),color='red', size=3)
 p_poverty <- p_poverty + theme_fivethirtyeight() + theme(axis.title = element_text(), legend.position = 'none') + labs(x = '% Below Poverty per Tract', y = '')
 p_poverty
-
-
-
-
 ```
 
 
