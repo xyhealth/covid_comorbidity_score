@@ -5,11 +5,11 @@ output:
     df_print: paged
 ---
 
-
-As of 5/19/2020, New York City released a zipcode-level case and death count due to COVID-19. 
-- Is COVID-19 Community Risk Score associated with COVID-19 related deaths in NYC?
-- chirag@xy.ai
+# Associating the C-19 Community Risk Score with deaths in NYC
+- Chirag Patel (chirag@xy.ai)
 - 05/20/20
+- As of 5/19/2020, New York City released a zipcode-level case and death count due to COVID-19. 
+- Is COVID-19 Community Risk Score associated with COVID-19 related deaths in NYC?
 - modified 09/26/20 with new September death rates
 - see: https://github.com/nychealth/coronavirus-data
 
@@ -93,9 +93,15 @@ p
 
 ```
 
+# Write out the risk score per death rate for plotting
+```{r}
+write_csv(risk_score_nyc %>% dplyr::select(risk_score, COVID_DEATH_RATE, MODIFIED_ZCTA,NEIGHBORHOOD_NAME, NEIGHBORHOOD_NAME) %>%  arrange(desc(risk_score)), path = './scores/new_york_risk_score_death_092720.csv')
+
+```
+
 # Model the death rate
 
-```{r results='asis', message = FALSE}
+```{r results='asis', message = FALSE, fig.width=12, fig.height=6}
 
 mod <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR, risk_score_nyc %>% filter(date_download == '05/20/20'))
 mod_2 <- lm(COVID_DEATH_RATE ~ risk_score + POP_DENOMINATOR + COVID_CASE_RATE, risk_score_nyc %>% filter(date_download == '05/20/20'))
