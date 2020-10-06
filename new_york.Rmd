@@ -14,6 +14,7 @@ output:
 - see: https://github.com/nychealth/coronavirus-data
 
 ```{r load census and death data}
+library(broom)
 library(tidyverse)
 library(ggrepel)
 library(MASS)
@@ -87,6 +88,8 @@ p
 p  <- ggplot(risk_score_nyc, aes(risk_score, COVID_DEATH_RATE, color=date_download))
 p <- p + geom_point()
 p <- p + geom_text_repel(data=risk_score_nyc %>% filter(risk_score > 45), aes(risk_score, COVID_DEATH_RATE, label=MODIFIED_ZCTA))
+p <- p + ylab('COVID-19 Deaths') + xlab('US-wide COVID-19 Risk Score for NYC')
+p <- p + theme(legend.position = 'none')
 p
 
 
@@ -112,6 +115,11 @@ mod_5 <- glm.nb( COVID_DEATH_COUNT ~ risk_score + median_income +  less_than_hig
 mod_5_sept <- glm.nb( COVID_DEATH_COUNT ~ risk_score + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc %>% filter(date_download == '09/26/20'))
 
 
+mod_5_scale <- glm.nb( COVID_DEATH_COUNT ~ I(scale(risk_score)) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc %>% filter(date_download == '05/20/20'))
+
+
+DT::datatable(tidy(mod_5_scale, conf.int = TRUE))
+
 mod_6 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct + college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + POP_DENOMINATOR, data=risk_score_nyc %>% filter(date_download == '05/20/20'))
 
 mod_7 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + POP_DENOMINATOR, data=risk_score_nyc %>% filter(date_download == '05/20/20'))
@@ -123,8 +131,10 @@ mod_8 <- lm(COVID_DEATH_RATE ~  median_income +  less_than_high_school_pct +coll
 
 mod_5b <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score > 40) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc %>% filter(date_download == '05/20/20'))
 
-may_model_plot <- plot_model(mod_5, type="std2", axis.lim = c(.25, 3))
-sept_model_plot <- plot_model(mod_5_sept, type="std2", axis.lim = c(.25, 3))
+DT::datatable(tidy(mod_5b, conf.int=TRUE))
+
+may_model_plot <- plot_model(mod_5, type="std", axis.lim = c(.25, 3), axis.title = c('Incidence Rate Ratio', 'Variable'))
+sept_model_plot <- plot_model(mod_5_sept, type="std", axis.lim = c(.25, 3), axis.title = c('Incidence Rate Ratio', 'Variable'))
 plot_grid(may_model_plot,sept_model_plot, labels = c('May 2020', 'Sept 2020'))
 
 ```
