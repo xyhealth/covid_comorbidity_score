@@ -22,8 +22,9 @@ library(scales)
 library(corrr)
 library(randomForest)
 library(ggpubr)
+library(broom)
 WRITE_OUTPUT <- TRUE
-RUN_RF <- TRUE
+RUN_RF <- FALSE
 ```
 
 ```{r load and prepare data}

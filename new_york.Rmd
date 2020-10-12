@@ -119,6 +119,7 @@ mod_5_scale <- glm.nb( COVID_DEATH_COUNT ~ I(scale(risk_score)) + median_income 
 
 
 DT::datatable(tidy(mod_5_scale, conf.int = TRUE))
+write_csv(tidy(mod_5_scale, conf.int = TRUE), path = './manuscript_tables/Table3.csv')
 
 mod_6 <- lm(COVID_DEATH_RATE ~ I(risk_score/10) + median_income +  less_than_high_school_pct + college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + POP_DENOMINATOR, data=risk_score_nyc %>% filter(date_download == '05/20/20'))
 
