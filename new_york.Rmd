@@ -8,6 +8,7 @@ output:
 # Associating the C-19 Community Risk Score with deaths in NYC
 - Chirag Patel (chirag@xy.ai)
 - 05/20/20
+- lat updated 12/16/20
 - As of 5/19/2020, New York City released a zipcode-level case and death count due to COVID-19. 
 - Is COVID-19 Community Risk Score associated with COVID-19 related deaths in NYC?
 - modified 09/26/20 with new September death rates
@@ -33,7 +34,10 @@ nyc_deaths_may <- nyc_deaths_may %>% mutate(TOTAL_COVID_TESTS = NA, date_downloa
 nyc_deaths_sept <- read_csv('./external_data/data-by-modzcta_092620.csv') 
 nyc_deaths_sept <- nyc_deaths_sept %>% mutate(date_download = '09/26/20')
 
-nyc_deaths <- rbind(nyc_deaths_sept, nyc_deaths_may)
+## DEC 2020
+nyc_deaths_dec <- read_csv('./external_data/data-by-modzcta_121520.csv') %>% mutate(date_download = '12/15/20')
+
+nyc_deaths <- rbind(nyc_deaths_sept, nyc_deaths_may, nyc_deaths_dec)
 zcta_to_census <- read_csv(url('http://www2.census.gov/geo/docs/maps-data/data/rel/zcta_tract_rel_10.txt?#')) # census walk file from tract to ZCTA
 nyc_deaths$MODIFIED_ZCTA <- as.character(nyc_deaths$MODIFIED_ZCTA)
 nyc_census <- nyc_deaths %>% left_join(zcta_to_census, by=c('MODIFIED_ZCTA'='ZCTA5'))
@@ -96,6 +100,8 @@ p
 
 ```
 
+
+
 # Write out the risk score per death rate for plotting
 ```{r}
 write_csv(risk_score_nyc %>% dplyr::select(risk_score, COVID_DEATH_RATE, MODIFIED_ZCTA,NEIGHBORHOOD_NAME, NEIGHBORHOOD_NAME) %>%  arrange(desc(risk_score)), path = './scores/new_york_risk_score_death_092720.csv')
@@ -114,6 +120,7 @@ mod_5 <- glm.nb( COVID_DEATH_COUNT ~ risk_score + median_income +  less_than_hig
 
 mod_5_sept <- glm.nb( COVID_DEATH_COUNT ~ risk_score + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc %>% filter(date_download == '09/26/20'))
 
+mod_5_dec <- glm.nb( COVID_DEATH_COUNT ~ risk_score + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc %>% filter(date_download == '12/15/20'))
 
 mod_5_scale <- glm.nb( COVID_DEATH_COUNT ~ I(scale(risk_score)) + median_income +  less_than_high_school_pct +college_pct + african_american_pct + mexican_pct + hispanic_pct + asian_pct  + at_below_poverty_pct + more_than_one_occupant_per_room_pct + no_health_insurance_pct + unemployment_pct + COVID_CASE_COUNT + offset(log(POP_DENOMINATOR)), data=risk_score_nyc %>% filter(date_download == '05/20/20'))
 
@@ -134,8 +141,6 @@ mod_5b <- glm.nb( COVID_DEATH_COUNT ~ I(risk_score > 40) + median_income +  less
 
 DT::datatable(tidy(mod_5b, conf.int=TRUE))
 
-may_model_plot <- plot_model(mod_5, type="std", axis.lim = c(.25, 3), axis.title = c('Incidence Rate Ratio', 'Variable'))
-sept_model_plot <- plot_model(mod_5_sept, type="std", axis.lim = c(.25, 3), axis.title = c('Incidence Rate Ratio', 'Variable'))
-plot_grid(may_model_plot,sept_model_plot, labels = c('May 2020', 'Sept 2020'))
+
 
 ```
